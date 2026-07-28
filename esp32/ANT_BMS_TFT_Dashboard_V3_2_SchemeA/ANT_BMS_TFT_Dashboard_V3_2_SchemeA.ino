@@ -2080,7 +2080,7 @@ void setup() {
                 TFT_ROTATION, TFT_INVERT ? "true" : "false");
 
   initDisplay();
-
+initDisplay（）；
   preferences.begin("bms-dash", false);
   selectedBmsMac = normalizeMac(preferences.getString(NVS_SELECTED_BMS_MAC, ""));
   selectedBmsName = preferences.getString(NVS_SELECTED_BMS_NAME, "");
