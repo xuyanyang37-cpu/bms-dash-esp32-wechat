@@ -9,7 +9,7 @@ public:
   JkProtocol();
   void setProtocol32S(bool enable){protocol32S_=enable;}
   bool isProtocol32S() const {return protocol32S_;}
-  size_t expectedFrameLength() const {return protocol32S_ ? 332 : 300;}
+  size_t expectedFrameLength() const {return 300;}
   bool parseFrame(const uint8_t*,size_t,BmsData&);
   void buildCommand(uint8_t,uint8_t,uint8_t[20]);
 
