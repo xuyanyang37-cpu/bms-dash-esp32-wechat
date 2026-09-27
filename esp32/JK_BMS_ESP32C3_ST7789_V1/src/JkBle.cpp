@@ -18,7 +18,7 @@ bool JkBle::begin(){
   Preferences p;
   p.begin("jkcfg", true);
   configuredAddress_=p.getString("mac", "");
-  protocol32S_=p.getBool("32s", true);
+  protocol32S_=p.getBool("32s", true);\n  g_bmsData.energyConsumptionWhKm=p.getFloat("whkm", 100.0f);\n  if(g_bmsData.energyConsumptionWhKm<1.0f || g_bmsData.energyConsumptionWhKm>1000.0f)\n    g_bmsData.energyConsumptionWhKm=100.0f;
   p.end();
 
   protocol_.setProtocol32S(protocol32S_);
