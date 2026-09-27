@@ -37,7 +37,7 @@ private:
   NimBLERemoteCharacteristic* ch_;
   JkProtocol protocol_;
   uint8_t counter_;
-  uint32_t lastRequest_;
+  uint32_t lastRequest_;\n  uint32_t lastReconnectAttempt_;
   uint8_t scanCount_;
   uint8_t scanAttempt_;
   bool protocol32S_;
