@@ -49,7 +49,7 @@ void Display::update(const BmsData& d){
     return;
   }
 
-  if(d.bootState==BOOT_HOTSPOT || d.hotspot){
+  if((d.bootState==BOOT_HOTSPOT || d.hotspot) && !d.online){
     sprite_.setTextColor(TFT_YELLOW,TFT_BLACK);
     sprite_.drawCentreString("HOTSPOT MODE",160,8,4);
     sprite_.setTextColor(TFT_WHITE,TFT_BLACK);
@@ -64,7 +64,7 @@ void Display::update(const BmsData& d){
   }
 
   sprite_.setTextColor(d.online?TFT_GREEN:TFT_RED,TFT_BLACK);
-  sprite_.drawString(d.online?"BLE OK":"BLE OFF",5,3,2);
+  sprite_.drawString(d.online?(d.hotspot?"BLE OK AP":"BLE OK"):"BLE OFF",5,3,2);
   sprite_.setTextColor(TFT_WHITE,TFT_BLACK);
   sprite_.drawString(d.deviceName.length()?d.deviceName:"JK-BMS",75,3,2);
 
