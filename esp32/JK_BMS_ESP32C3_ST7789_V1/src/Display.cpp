@@ -1,7 +1,7 @@
 #include "Display.h"
 #include "FontGB2312.h"
 
-static uint16_t lerp565(uint16_t a,uint16_t b,uint16_t t){
+static uint16_t lerp565(uint16_t a, uint16_t b, uint16_t t) {
   uint8_t ar=(a>>11)&0x1F, ag=(a>>5)&0x3F, ab=a&0x1F;
   uint8_t br=(b>>11)&0x1F, bg=(b>>5)&0x3F, bb=b&0x1F;
   uint8_t rr=ar+((br-ar)*t)/100;
@@ -10,208 +10,285 @@ static uint16_t lerp565(uint16_t a,uint16_t b,uint16_t t){
   return (rr<<11)|(rg<<5)|rb;
 }
 
-void Display::begin(){
-  pinMode(TFT_BL,OUTPUT);
-  digitalWrite(TFT_BL,HIGH);
+bool Display::changed(float a, float b, float eps) const {
+  return fabsf(a-b) >= eps;
+}
+
+void Display::begin() {
+  pinMode(TFT_BL, OUTPUT);
+  digitalWrite(TFT_BL, HIGH);
 
   tft_.init();
   tft_.setRotation(1);
   tft_.fillScreen(TFT_BLACK);
 
-  sprite_.setColorDepth(16);
-  sprite_.createSprite(320,170);
-  sprite_.fillSprite(TFT_BLACK);
-  sprite_.pushSprite(0,0);
+  statusSprite_.setColorDepth(16);
+  socSprite_.setColorDepth(16);
+  rowSprite_.setColorDepth(16);
+  barSprite_.setColorDepth(16);
+
+  statusSprite_.createSprite(320, 22);
+  socSprite_.createSprite(140, 65);
+  rowSprite_.createSprite(175, 28);
+  barSprite_.createSprite(304, 8);
+
+  statusSprite_.fillSprite(TFT_BLACK);
+  socSprite_.fillSprite(TFT_BLACK);
+  rowSprite_.fillSprite(TFT_BLACK);
+  barSprite_.fillSprite(TFT_BLACK);
+
+  initialized_ = true;
+  firstDashboard_ = true;
+  drawFullPage(g_bmsData);
 }
 
-void Display::update(const BmsData& d){
-  sprite_.fillSprite(TFT_BLACK);
+void Display::update(const BmsData& d) {
+  if (!initialized_) return;
 
-  // ============================================================
-  // 启动 / 自动扫描页面
-  // ============================================================
-  if(d.bootState==BOOT_SCANNING || d.bootState==BOOT_START){
-    FontGB2312::drawCenterString(
-      sprite_,160,7,"连接电池",TFT_CYAN,TFT_BLACK,2);
+  // 页面状态发生变化时只做一次整屏切换。
+  if (d.bootState != lastBootState_ || (d.hotspot != lastData_.hotspot)) {
+    drawFullPage(d);
+    lastBootState_ = d.bootState;
+    lastData_ = d;
+    lastOnline_ = d.online;
+    lastDeviceName_ = d.deviceName;
+    return;
+  }
 
-    FontGB2312::drawCenterString(
-      sprite_,160,43,
+  if (d.bootState != BOOT_CONNECTED && !d.online) {
+    // 启动/连接/热点页面只在文字变化时重绘，避免周期性整屏刷新。
+    if (d.statusMessage != lastData_.statusMessage ||
+        d.scanAttempt != lastData_.scanAttempt ||
+        d.hotspotIp != lastData_.hotspotIp ||
+        d.mac != lastData_.mac) {
+      drawFullPage(d);
+      lastData_ = d;
+    }
+    return;
+  }
+
+  drawDashboard(d, firstDashboard_);
+  firstDashboard_ = false;
+  lastData_ = d;
+  lastOnline_ = d.online;
+  lastDeviceName_ = d.deviceName;
+}
+
+void Display::drawFullPage(const BmsData& d) {
+  // 只有页面切换/首次显示才整屏清空。
+  tft_.fillScreen(TFT_BLACK);
+  firstDashboard_ = (d.online || d.bootState == BOOT_CONNECTED);
+
+  if (d.bootState == BOOT_SCANNING || d.bootState == BOOT_START) {
+    TFT_eSprite page(&tft_);
+    page.setColorDepth(16);
+    page.createSprite(320,170);
+    page.fillSprite(TFT_BLACK);
+
+    FontGB2312::drawCenterString(page,160,7,"连接电池",TFT_CYAN,TFT_BLACK,2);
+    FontGB2312::drawCenterString(page,160,43,
       d.statusMessage.length()?d.statusMessage:"扫描蓝牙...",
       TFT_WHITE,TFT_BLACK,1);
 
     int w=250;
-    sprite_.drawRoundRect(35,72,w,18,5,TFT_DARKGREY);
-
+    page.drawRoundRect(35,72,w,18,5,TFT_DARKGREY);
     int progress=(d.scanAttempt*100)/3;
     if(progress>100) progress=100;
+    if(progress>0)
+      page.fillRoundRect(38,75,(w-6)*progress/100,12,4,TFT_BLUE);
 
-    if(progress>0){
-      sprite_.fillRoundRect(
-        38,75,(w-6)*progress/100,12,4,TFT_BLUE);
-    }
-
-    FontGB2312::drawCenterString(
-      sprite_,160,96,
-      String(d.scanAttempt)+"/3",
-      TFT_YELLOW,TFT_BLACK,1);
-
-    FontGB2312::drawCenterString(
-      sprite_,160,135,
-      "自动扫描并连接JK保护板",
-      TFT_LIGHTGREY,TFT_BLACK,1);
-
-    sprite_.pushSprite(0,0);
+    FontGB2312::drawCenterString(page,160,96,
+      String(d.scanAttempt)+"/3",TFT_YELLOW,TFT_BLACK,1);
+    FontGB2312::drawCenterString(page,160,135,
+      "自动扫描并连接JK保护板",TFT_LIGHTGREY,TFT_BLACK,1);
+    page.pushSprite(0,0);
+    page.deleteSprite();
     return;
   }
 
-  // ============================================================
-  // 正在连接
-  // ============================================================
-  if(d.bootState==BOOT_CONNECTING){
-    FontGB2312::drawCenterString(
-      sprite_,160,8,"正在连接",TFT_YELLOW,TFT_BLACK,2);
+  if (d.bootState == BOOT_CONNECTING) {
+    TFT_eSprite page(&tft_);
+    page.setColorDepth(16);
+    page.createSprite(320,170);
+    page.fillSprite(TFT_BLACK);
 
-    FontGB2312::drawCenterString(
-      sprite_,160,50,
-      d.mac.length()?d.mac:"JK-BMS",
-      TFT_WHITE,TFT_BLACK,1);
-
-    FontGB2312::drawCenterString(
-      sprite_,160,82,
-      "正在建立蓝牙连接...",
-      TFT_WHITE,TFT_BLACK,1);
-
-    sprite_.pushSprite(0,0);
+    FontGB2312::drawCenterString(page,160,8,"正在连接",TFT_YELLOW,TFT_BLACK,2);
+    FontGB2312::drawCenterString(page,160,50,
+      d.mac.length()?d.mac:"JK-BMS",TFT_WHITE,TFT_BLACK,1);
+    FontGB2312::drawCenterString(page,160,82,
+      "正在建立蓝牙连接...",TFT_WHITE,TFT_BLACK,1);
+    page.pushSprite(0,0);
+    page.deleteSprite();
     return;
   }
 
-  // ============================================================
-  // 热点设置页面
-  // ============================================================
-  if((d.bootState==BOOT_HOTSPOT || d.hotspot) && !d.online){
-    FontGB2312::drawCenterString(
-      sprite_,160,5,"热点设置",TFT_YELLOW,TFT_BLACK,2);
+  if ((d.bootState == BOOT_HOTSPOT || d.hotspot) && !d.online) {
+    TFT_eSprite page(&tft_);
+    page.setColorDepth(16);
+    page.createSprite(320,170);
+    page.fillSprite(TFT_BLACK);
 
-    FontGB2312::drawCenterString(
-      sprite_,160,43,"WiFi: JK-BMS-SETUP",
-      TFT_WHITE,TFT_BLACK,1);
-
-    FontGB2312::drawCenterString(
-      sprite_,160,70,"手机连接后打开网页",
-      TFT_CYAN,TFT_BLACK,1);
-
-    FontGB2312::drawCenterString(
-      sprite_,160,94,
+    FontGB2312::drawCenterString(page,160,5,"热点设置",TFT_YELLOW,TFT_BLACK,2);
+    FontGB2312::drawCenterString(page,160,43,
+      "WiFi: JK-BMS-SETUP",TFT_WHITE,TFT_BLACK,1);
+    FontGB2312::drawCenterString(page,160,70,
+      "手机连接后打开网页",TFT_CYAN,TFT_BLACK,1);
+    FontGB2312::drawCenterString(page,160,94,
       d.hotspotIp.length()?d.hotspotIp:"192.168.4.1",
       TFT_CYAN,TFT_BLACK,1);
-
-    FontGB2312::drawCenterString(
-      sprite_,160,130,"扫描 / 选择 / 连接电池",
-      TFT_LIGHTGREY,TFT_BLACK,1);
-
-    sprite_.pushSprite(0,0);
+    FontGB2312::drawCenterString(page,160,130,
+      "扫描 / 选择 / 连接电池",TFT_LIGHTGREY,TFT_BLACK,1);
+    page.pushSprite(0,0);
+    page.deleteSprite();
     return;
   }
 
-  // ============================================================
-  // 主 BMS 数据页面
-  // ============================================================
+  drawDashboard(d, true);
+}
 
-  // 左侧 SOC 数值仍然使用 TFT_eSPI 大号数字字体。
-  sprite_.setTextColor(TFT_GREEN,TFT_BLACK);
-  sprite_.drawCentreString(String(d.soc,0)+"%",78,25,7);
+void Display::drawDashboard(const BmsData& d, bool force) {
+  if (force) {
+    tft_.fillScreen(TFT_BLACK);
+    drawStatus(d);
+    drawSoc(d);
+    drawVoltage(d);
+    drawCurrent(d);
+    drawPower(d);
+    drawCapacity(d);
+    drawRange(d);
+    drawSocBar(d);
+    return;
+  }
 
-  // 左侧中文标签。
-  FontGB2312::drawCenterString(
-    sprite_,78,80,"剩余电量",TFT_WHITE,TFT_BLACK,1);
+  // BLE 数据变化后，只刷新发生变化的区域。
+  if (d.online != lastOnline_ || d.deviceName != lastDeviceName_)
+    drawStatus(d);
 
-  // 顶部连接状态。
-  FontGB2312::drawText(
-    sprite_,5,3,
-    d.online?"蓝牙已连接":"蓝牙断开",
-    TFT_LIGHTGREY,TFT_BLACK,1);
+  if (changed(d.soc,lastData_.soc,0.5f))
+    drawSoc(d);
 
-  if(d.deviceName.length()){
-    FontGB2312::drawRightString(
-      sprite_,315,3,d.deviceName,
+  if (changed(d.totalVoltage,lastData_.totalVoltage,0.1f))
+    drawVoltage(d);
+
+  if (changed(d.current,lastData_.current,0.1f))
+    drawCurrent(d);
+
+  if (changed(d.power,lastData_.power,1.0f))
+    drawPower(d);
+
+  if (changed(d.remainingCapacityAh,lastData_.remainingCapacityAh,0.1f))
+    drawCapacity(d);
+
+  if (changed(d.remainingRangeKm,lastData_.remainingRangeKm,0.1f))
+    drawRange(d);
+
+  if (changed(d.soc,lastData_.soc,0.5f))
+    drawSocBar(d);
+}
+
+void Display::drawStatus(const BmsData& d) {
+  statusSprite_.fillSprite(TFT_BLACK);
+
+  FontGB2312::drawText(statusSprite_,5,3,
+    d.online ? "蓝牙已连接" : "蓝牙断开",
+    d.online ? TFT_GREEN : TFT_LIGHTGREY,TFT_BLACK,1);
+
+  if (d.deviceName.length()) {
+    FontGB2312::drawRightString(statusSprite_,315,3,d.deviceName,
       TFT_LIGHTGREY,TFT_BLACK,1);
   }
 
-  // 电压。
-  FontGB2312::drawText(
-    sprite_,145,27,"电压",
-    TFT_CYAN,TFT_BLACK,1);
-  sprite_.drawRightString(
-    String(d.totalVoltage,1)+" V",315,25,4);
+  statusSprite_.pushSprite(0,0);
+}
 
-  // 电流。
-  FontGB2312::drawText(
-    sprite_,145,56,"电流",
-    TFT_YELLOW,TFT_BLACK,1);
-  sprite_.drawRightString(
-    String(d.current,1)+" A",315,54,4);
+void Display::drawSoc(const BmsData& d) {
+  socSprite_.fillSprite(TFT_BLACK);
 
-  // 功率。
-  FontGB2312::drawText(
-    sprite_,145,85,"功率",
-    TFT_ORANGE,TFT_BLACK,1);
-  sprite_.drawRightString(
-    String(d.power,0)+" W",315,83,4);
+  // SOC 主数字：占左侧区域中央，使用 TFT_eSPI 7 号大字体。
+  String value=String(d.soc,0);
+  socSprite_.setTextColor(TFT_GREEN,TFT_BLACK);
+  socSprite_.drawCentreString(value,68,2,7);
 
-  // 剩余容量。
-  FontGB2312::drawText(
-    sprite_,145,114,"剩余容量",
-    TFT_CYAN,TFT_BLACK,1);
-  sprite_.drawRightString(
-    String(d.remainingCapacityAh,1)+" Ah",315,112,4);
+  // 百分号独立缩小，放在主数字右下角。
+  // 位置根据 0~100 三种位数统一放在数字区域右下。
+  socSprite_.setTextColor(TFT_GREEN,TFT_BLACK);
+  socSprite_.drawString("%",105,43,2);
 
-  // 剩余里程。
-  FontGB2312::drawText(
-    sprite_,145,143,"剩余里程",
-    TFT_LIGHTGREY,TFT_BLACK,1);
-  sprite_.drawRightString(
-    String(d.remainingRangeKm,1)+" km",315,141,2);
+  FontGB2312::drawCenterString(
+    socSprite_,68,53,"剩余电量",
+    TFT_WHITE,TFT_BLACK,1);
 
-  // ============================================================
-  // 底部 SOC 渐变进度条
-  // ============================================================
+  socSprite_.pushSprite(0,21);
+}
+
+void Display::clearRow() {
+  rowSprite_.fillSprite(TFT_BLACK);
+}
+
+void Display::drawVoltage(const BmsData& d) {
+  clearRow();
+  FontGB2312::drawText(rowSprite_,0,5,"电压",TFT_CYAN,TFT_BLACK,1);
+  rowSprite_.drawRightString(String(d.totalVoltage,1)+" V",174,2,4);
+  rowSprite_.pushSprite(145,24);
+}
+
+void Display::drawCurrent(const BmsData& d) {
+  clearRow();
+  FontGB2312::drawText(rowSprite_,0,5,"电流",TFT_YELLOW,TFT_BLACK,1);
+  rowSprite_.drawRightString(String(d.current,1)+" A",174,2,4);
+  rowSprite_.pushSprite(145,53);
+}
+
+void Display::drawPower(const BmsData& d) {
+  clearRow();
+  FontGB2312::drawText(rowSprite_,0,5,"功率",TFT_ORANGE,TFT_BLACK,1);
+  rowSprite_.drawRightString(String(d.power,0)+" W",174,2,4);
+  rowSprite_.pushSprite(145,82);
+}
+
+void Display::drawCapacity(const BmsData& d) {
+  clearRow();
+  FontGB2312::drawText(rowSprite_,0,5,"剩余容量",TFT_CYAN,TFT_BLACK,1);
+  rowSprite_.drawRightString(String(d.remainingCapacityAh,1)+" Ah",174,2,4);
+  rowSprite_.pushSprite(145,111);
+}
+
+void Display::drawRange(const BmsData& d) {
+  clearRow();
+  FontGB2312::drawText(rowSprite_,0,5,"剩余里程",TFT_LIGHTGREY,TFT_BLACK,1);
+  rowSprite_.drawRightString(String(d.remainingRangeKm,1)+" km",174,4,2);
+  rowSprite_.pushSprite(145,140);
+}
+
+void Display::drawSocBar(const BmsData& d) {
+  barSprite_.fillSprite(TFT_BLACK);
+
   float ratio=d.soc/100.0f;
   if(ratio<0) ratio=0;
   if(ratio>1) ratio=1;
 
-  const int x=8,y=162,w=304,h=6;
-
-  for(int i=0;i<16;i++){
+  const int w=304;
+  for(int i=0;i<16;i++) {
     float p0=i/16.0f;
     uint16_t color;
 
-    if(p0<0.25f){
-      color=lerp565(
-        TFT_RED,TFT_ORANGE,
-        (uint16_t)(p0*400));
-    }else if(p0<0.5f){
-      color=lerp565(
-        TFT_ORANGE,TFT_YELLOW,
-        (uint16_t)((p0-0.25f)*400));
-    }else if(p0<0.75f){
-      color=lerp565(
-        TFT_YELLOW,TFT_GREEN,
-        (uint16_t)((p0-0.5f)*400));
-    }else{
-      color=lerp565(
-        TFT_GREEN,TFT_CYAN,
-        (uint16_t)((p0-0.75f)*400));
-    }
+    if(p0<0.25f)
+      color=lerp565(TFT_RED,TFT_ORANGE,(uint16_t)(p0*400));
+    else if(p0<0.5f)
+      color=lerp565(TFT_ORANGE,TFT_YELLOW,(uint16_t)((p0-0.25f)*400));
+    else if(p0<0.75f)
+      color=lerp565(TFT_YELLOW,TFT_GREEN,(uint16_t)((p0-0.5f)*400));
+    else
+      color=lerp565(TFT_GREEN,TFT_CYAN,(uint16_t)((p0-0.75f)*400));
 
-    int sx=x+(w*i)/16;
+    int sx=(w*i)/16;
     int sw=(w*(i+1))/16-(w*i)/16;
 
-    if((i+1)/16.0f<=ratio){
-      sprite_.fillRect(sx,y,sw,h,color);
-    }else{
-      sprite_.drawRect(sx,y,sw,h,TFT_DARKGREY);
-    }
+    if ((i+1)/16.0f<=ratio)
+      barSprite_.fillRect(sx,0,sw,8,color);
+    else
+      barSprite_.drawRect(sx,0,sw,8,TFT_DARKGREY);
   }
 
-  sprite_.pushSprite(0,0);
+  barSprite_.pushSprite(8,162);
 }
