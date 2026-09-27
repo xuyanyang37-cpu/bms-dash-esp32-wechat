@@ -34,7 +34,7 @@ void setup(){
   Serial.begin(115200);
   delay(500);
 
-  Serial.println("ESP32-C3 JK BMS + ST7789 V2");
+  Serial.println("ESP32-C3 JK BMS + ST7789 UI 2.0");
   Serial.println("BL=5 CS=3 DC=2 RES=10 SDA=7 SCL=6");
 
   display.begin();
@@ -54,8 +54,10 @@ void loop(){
   jk.loop();
   webConfig.loop();
 
+  // UI 2.0 按设计目标以 500ms 刷新检查一次；
+  // Display 内部仍采用局部脏区刷新，只有数据变化才真正写屏。
   static uint32_t drawMs=0;
-  if(millis()-drawMs>=200){
+  if(millis()-drawMs>=500){
     drawMs=millis();
     display.update(g_bmsData);
   }
