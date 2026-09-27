@@ -8,7 +8,7 @@ String WebConfig::jsonEscape(const String& s){
   String o;
   for(size_t i=0;i<s.length();i++){
     char c=s[i];
-    if(c=='"') o+="\\"";
+    if(c=='"') o+="\\\"";
     else if(c=='\\') o+="\\\\";
     else if(c=='\n') o+="\\n";
     else if(c=='\r') o+="\\r";
