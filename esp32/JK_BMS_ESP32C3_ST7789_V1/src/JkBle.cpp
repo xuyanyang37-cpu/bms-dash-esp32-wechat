@@ -18,7 +18,10 @@ bool JkBle::begin(){
   Preferences p;
   p.begin("jkcfg", true);
   configuredAddress_=p.getString("mac", "");
-  protocol32S_=p.getBool("32s", true);\n  g_bmsData.energyConsumptionWhKm=p.getFloat("whkm", 100.0f);\n  if(g_bmsData.energyConsumptionWhKm<1.0f || g_bmsData.energyConsumptionWhKm>1000.0f)\n    g_bmsData.energyConsumptionWhKm=100.0f;
+  protocol32S_=p.getBool("32s", true);
+  g_bmsData.energyConsumptionWhKm=p.getFloat("whkm", 100.0f);
+  if(g_bmsData.energyConsumptionWhKm<1.0f || g_bmsData.energyConsumptionWhKm>1000.0f)
+    g_bmsData.energyConsumptionWhKm=100.0f;
   p.end();
 
   protocol_.setProtocol32S(protocol32S_);
@@ -186,7 +189,8 @@ void JkBle::handleNotification(const uint8_t* d,size_t n){
     size_t next=0;
     for(size_t i=4;i+4<len;i++){
       if(rx[i]==0x55&&rx[i+1]==0xAA&&rx[i+2]==0xEB&&rx[i+3]==0x90){
-        next=i;break;
+        next=i;
+        break;
       }
     }
 
@@ -221,9 +225,9 @@ void JkBle::loop(){
     if(g_bmsData.bootState==BOOT_CONNECTED) setStatus(BOOT_SCANNING,"蓝牙已断开");
     return;
   }
+
   if(millis()-lastRequest_>5000){
     request(0x96);
-    request(0x97);
     lastRequest_=millis();
   }
 }
