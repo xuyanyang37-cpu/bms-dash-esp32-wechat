@@ -6,7 +6,6 @@
 #include "Display.h"
 #include "WebConfig.h"
 
-BmsData g_bmsData;
 static JkBle jk;
 static Display display;
 static WebConfig webConfig;
