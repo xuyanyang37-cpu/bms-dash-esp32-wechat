@@ -141,9 +141,10 @@ bool JkBle::connectByAddress(const String& address){
   writeCh_=nullptr;
   notifyCh_=nullptr;
 
-  for(uint16_t idx=0; idx<4; idx++){
-    NimBLERemoteCharacteristic* candidate=s->getCharacteristic(CHAR,idx);
-    if(!candidate) break;
+  const std::vector<NimBLERemoteCharacteristic*>& chars=s->getCharacteristics(true);
+  for(size_t idx=0; idx<chars.size(); idx++){
+    NimBLERemoteCharacteristic* candidate=chars[idx];
+    if(!candidate || candidate->getUUID().toString()!=String(CHAR).c_str()) continue;
     if(!writeCh_ && (candidate->canWrite() || candidate->canWriteNoResponse()))
       writeCh_=candidate;
     if(!notifyCh_ && candidate->canNotify())
