@@ -30,7 +30,10 @@ void JkBle::handleNotification(const uint8_t*d,size_t n){
     if(st){memmove(rx,rx+st,len-st);len-=st;if(len<5)break;}
     size_t next=0;for(size_t i=4;i+4<len;i++)if(rx[i]==0x55&&rx[i+1]==0xAA&&rx[i+2]==0xEB&&rx[i+3]==0x90){next=i;break;}
     if(next){if(protocol_.parseFrame(rx,next,g_bmsData))g_bmsData.online=true;memmove(rx,rx+next,len-next);len-=next;continue;}
-    if(len>=300&&protocol_.parseFrame(rx,300,g_bmsData)){g_bmsData.online=true;memmove(rx,rx+300,len-300);len-=300;continue;}
+    size_t expected = JK_PROTOCOL_32S ? 332 : 300;
+    if(len>=expected&&protocol_.parseFrame(rx,expected,g_bmsData)){
+      g_bmsData.online=true;memmove(rx,rx+expected,len-expected);len-=expected;continue;
+    }
     break;
   }
 }
