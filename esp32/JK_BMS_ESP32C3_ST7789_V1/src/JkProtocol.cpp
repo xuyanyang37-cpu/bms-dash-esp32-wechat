@@ -15,7 +15,7 @@ int JkProtocol::detectOffset(const uint8_t*p,size_t n)const{
 bool JkProtocol::parseMainFrame(const uint8_t*p,size_t n,BmsData&o){
   int off=detectOffset(p,n);
   if(n<(size_t)(184+off))return false;
-  uint8_t cells=32;
+  uint8_t cells=JK_PROTOCOL_32S ? 32 : 24;
   float minV=100,maxV=0;uint8_t minC=0,maxC=0;
   for(uint8_t i=0;i<cells;i++){
     size_t pos=6+i*2;if(pos+1>=n)break;
