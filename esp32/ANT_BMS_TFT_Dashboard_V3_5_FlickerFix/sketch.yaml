@@ -7,3 +7,4 @@ profiles:
     libraries:
       - TFT_eSPI
       - NimBLE-Arduino
+      - WebSockets
