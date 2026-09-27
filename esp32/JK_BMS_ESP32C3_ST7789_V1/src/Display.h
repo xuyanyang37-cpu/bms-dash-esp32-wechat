@@ -14,6 +14,7 @@ private:
   TFT_eSPI tft_;
   TFT_eSprite statusSprite_{&tft_};
   TFT_eSprite socSprite_{&tft_};
+  TFT_eSprite leftInfoSprite_{&tft_};
   TFT_eSprite rowSprite_{&tft_};
   TFT_eSprite barSprite_{&tft_};
 
