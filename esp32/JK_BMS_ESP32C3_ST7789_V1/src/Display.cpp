@@ -3,7 +3,7 @@
 static uint16_t lerp565(uint16_t a,uint16_t b,uint16_t t){
   uint8_t ar=(a>>11)&0x1F, ag=(a>>5)&0x3F, ab=a&0x1F;
   uint8_t br=(b>>11)&0x1F, bg=(b>>5)&0x3F, bb=b&0x1F;
-  uint8_t rr=ar+((br-ar)*t)/100, rg=ag+((gg-bg)*t)/100, rb=ab+((bb-ab)*t)/100;
+  uint8_t rr=ar+((br-ar)*t)/100, rg=ag+((bg-ag)*t)/100, rb=ab+((bb-ab)*t)/100;
   return (rr<<11)|(rg<<5)|rb;
 }
 
