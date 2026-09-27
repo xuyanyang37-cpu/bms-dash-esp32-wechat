@@ -21,6 +21,7 @@ bool JkBle::begin(){
   protocol32S_=p.getBool("32s", true);
   p.end();
 
+  protocol_.setProtocol32S(protocol32S_);
   return true;
 }
 
@@ -76,7 +77,6 @@ bool JkBle::scanAndConnect(uint32_t sec){
 
   scanDevices(sec);
 
-  // 优先使用网页设置过的 MAC
   if(configuredAddress_.length()){
     if(connectByAddress(configuredAddress_)) return true;
   }
@@ -86,7 +86,6 @@ bool JkBle::scanAndConnect(uint32_t sec){
     return false;
   }
 
-  // 自动连接信号最强的候选
   uint8_t best=0;
   for(uint8_t i=1;i<scanCount_;i++){
     if(scanItems_[i].rssi>scanItems_[best].rssi) best=i;
@@ -198,7 +197,7 @@ void JkBle::handleNotification(const uint8_t* d,size_t n){
       continue;
     }
 
-    size_t expected=protocol32S_ ? 332 : 300;
+    size_t expected=protocol_.expectedFrameLength();
     if(len>=expected){
       if(protocol_.parseFrame(rx,expected,g_bmsData)) g_bmsData.online=true;
       memmove(rx,rx+expected,len-expected);
