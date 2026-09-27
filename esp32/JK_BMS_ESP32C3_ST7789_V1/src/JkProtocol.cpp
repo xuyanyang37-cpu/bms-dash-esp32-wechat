@@ -35,7 +35,8 @@ bool JkProtocol::parseMainFrame(const uint8_t*p,size_t n,BmsData&o){
   uint8_t cells=0;
   for(uint8_t i=0;i<maxCells;i++) if(mask & (1UL<<i)) cells++;
 
-  if(cells==0) cells=maxCells;
+  // JK02 的有效电芯数来自 bitmask；mask=0 时不要把异常帧伪装成满电芯。
+  if(cells==0) return false;
   if(cells>JK_MAX_CELLS) cells=JK_MAX_CELLS;
 
   float minV=100,maxV=0;
@@ -75,6 +76,7 @@ bool JkProtocol::parseMainFrame(const uint8_t*p,size_t n,BmsData&o){
   o.balancingCurrent=u16le(p+138+off)*0.001f;
   o.balancing=p[140+off]!=0;
   o.soc=p[141+off];
+  if(o.soc>100.0f) o.soc=100.0f;
   o.remainingCapacityAh=u32le(p+142+off)*0.001f;
   o.totalCapacityAh=u32le(p+146+off)*0.001f;
 
@@ -106,9 +108,11 @@ bool JkProtocol::parseFrame(const uint8_t*p,size_t n,BmsData&o){
 }
 
 void JkProtocol::buildCommand(uint8_t cmd,uint8_t counter,uint8_t out[20]){
+  (void)counter; // JK02 命令帧的第5字节是 value length，不是请求计数器。
   memset(out,0,20);
   out[0]=0xAA;out[1]=0x55;out[2]=0x90;out[3]=0xEB;
-  out[4]=cmd;out[16]=counter;
+  out[4]=cmd;
+  out[5]=0x00; // 0x96/0x97 查询命令不携带参数
   uint8_t s=0;
   for(int i=0;i<19;i++) s+=out[i];
   out[19]=s;
