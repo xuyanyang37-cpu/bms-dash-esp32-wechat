@@ -6,7 +6,7 @@ static const char* SERVICE="FFE0";
 static const char* CHAR="FFE1";
 JkBle* JkBle::instance_=nullptr;
 
-JkBle::JkBle():client_(nullptr),ch_(nullptr),counter_(0),lastRequest_(0),lastReconnectAttempt_(0),
+JkBle::JkBle():client_(nullptr),ch_(nullptr),writeCh_(nullptr),notifyCh_(nullptr),counter_(0),lastRequest_(0),lastReconnectAttempt_(0),
   scanCount_(0),scanAttempt_(0),protocol32S_(true),configuredAddress_("") {
   instance_=this;
 }
@@ -110,6 +110,8 @@ bool JkBle::connectByAddress(const String& address){
     NimBLEDevice::deleteClient(client_);
     client_=nullptr;
     ch_=nullptr;
+    writeCh_=nullptr;
+    notifyCh_=nullptr;
   }
 
   setStatus(BOOT_CONNECTING, "连接 " + address);
@@ -134,14 +136,33 @@ bool JkBle::connectByAddress(const String& address){
     return false;
   }
 
-  ch_=s->getCharacteristic(CHAR);
-  if(!ch_){
+  // JK 部分机型在 FFE0 下存在两个同 UUID 的 FFE1：
+  // 一个负责写入，一个负责通知。不能只取第一个。
+  writeCh_=nullptr;
+  notifyCh_=nullptr;
+
+  for(uint16_t idx=0; idx<4; idx++){
+    NimBLERemoteCharacteristic* candidate=s->getCharacteristic(CHAR,idx);
+    if(!candidate) break;
+    if(!writeCh_ && (candidate->canWrite() || candidate->canWriteNoResponse()))
+      writeCh_=candidate;
+    if(!notifyCh_ && candidate->canNotify())
+      notifyCh_=candidate;
+  }
+
+  // 单 FFE1 机型通常同一个特征同时承担写入和通知。
+  if(!writeCh_) writeCh_=notifyCh_;
+  if(!notifyCh_) notifyCh_=writeCh_;
+
+  if(!writeCh_ || !notifyCh_){
     client_->disconnect();
-    setStatus(BOOT_SCANNING, "找不到FFE1特征");
+    setStatus(BOOT_SCANNING, "FFE1读写特征无效");
     return false;
   }
 
-  if(!ch_->canNotify() || !ch_->subscribe(true, notifyCallback)){
+  ch_=writeCh_;
+
+  if(!notifyCh_->canNotify() || !notifyCh_->subscribe(true, notifyCallback)){
     client_->disconnect();
     setStatus(BOOT_SCANNING, "FFE1通知订阅失败");
     return false;
@@ -213,10 +234,14 @@ void JkBle::handleNotification(const uint8_t* d,size_t n){
 }
 
 void JkBle::request(uint8_t cmd){
-  if(!ch_) return;
+  if(!writeCh_ && !ch_) return;
+  NimBLERemoteCharacteristic* writer=writeCh_ ? writeCh_ : ch_;
   uint8_t f[20];
   protocol_.buildCommand(cmd,counter_++,f);
-  ch_->writeValue(f,20,false);
+  if(writer->canWriteNoResponse())
+    writer->writeValue(f,20,false);
+  else if(writer->canWrite())
+    writer->writeValue(f,20,true);
 }
 
 void JkBle::loop(){
