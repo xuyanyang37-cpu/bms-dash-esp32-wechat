@@ -6,7 +6,7 @@ static const char* SERVICE="FFE0";
 static const char* CHAR="FFE1";
 JkBle* JkBle::instance_=nullptr;
 
-JkBle::JkBle():client_(nullptr),ch_(nullptr),counter_(0),lastRequest_(0),
+JkBle::JkBle():client_(nullptr),ch_(nullptr),counter_(0),lastRequest_(0),lastReconnectAttempt_(0),
   scanCount_(0),scanAttempt_(0),protocol32S_(true),configuredAddress_("") {
   instance_=this;
 }
@@ -222,7 +222,20 @@ void JkBle::request(uint8_t cmd){
 void JkBle::loop(){
   if(!connected()){
     g_bmsData.online=false;
-    if(g_bmsData.bootState==BOOT_CONNECTED) setStatus(BOOT_SCANNING,"蓝牙已断开");
+
+    if(g_bmsData.bootState==BOOT_CONNECTED)
+      setStatus(BOOT_SCANNING,"蓝牙已断开");
+
+    // 运行中断线后每15秒自动重新扫描/连接一次。
+    // 热点配置页面期间不主动抢占BLE扫描，避免影响网页操作。
+    if(g_bmsData.bootState!=BOOT_HOTSPOT &&
+       millis()-lastReconnectAttempt_>=15000){
+      lastReconnectAttempt_=millis();
+      scanAttempt_=0;
+      if(!scanAndConnect(3)){
+        g_bmsData.online=false;
+      }
+    }
     return;
   }
 
