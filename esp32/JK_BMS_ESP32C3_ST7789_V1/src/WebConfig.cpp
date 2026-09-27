@@ -11,6 +11,8 @@ String WebConfig::jsonEscape(const String& s){
     if(c=='"') o+="\\"";
     else if(c=='\\') o+="\\\\";
     else if(c=='\n') o+="\\n";
+    else if(c=='\r') o+="\\r";
+    else if(c=='\t') o+="\\t";
     else o+=c;
   }
   return o;
@@ -205,7 +207,19 @@ void WebConfig::handleConnect(){
     server_.send(400,"application/json","{\"message\":\"缺少index\"}");
     return;
   }
-  int index=server_.arg("index").toInt();
+  String indexText=server_.arg("index");
+  indexText.trim();
+  if(indexText.length()==0){
+    server_.send(400,"application/json; charset=utf-8","{\"message\":\"index无效\"}");
+    return;
+  }
+
+  int index=indexText.toInt();
+  if(index<0 || index>=ble_->getScanCount()){
+    server_.send(400,"application/json; charset=utf-8","{\"message\":\"index超出扫描结果范围\"}");
+    return;
+  }
+
   bool ok=ble_->connectDeviceByIndex((uint8_t)index);
   String j="{\"ok\":" + String(ok?"true":"false")+
            ",\"message\":\""+String(ok?"连接成功":"连接失败")+"\"}";
