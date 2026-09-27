@@ -48,7 +48,6 @@ void Display::begin() {
 void Display::update(const BmsData& d) {
   if (!initialized_) return;
 
-  // 页面状态发生变化时只做一次整屏切换。
   if (d.bootState != lastBootState_ || (d.hotspot != lastData_.hotspot)) {
     drawFullPage(d);
     lastBootState_ = d.bootState;
@@ -59,7 +58,6 @@ void Display::update(const BmsData& d) {
   }
 
   if (d.bootState != BOOT_CONNECTED && !d.online) {
-    // 启动/连接/热点页面只在文字变化时重绘，避免周期性整屏刷新。
     if (d.statusMessage != lastData_.statusMessage ||
         d.scanAttempt != lastData_.scanAttempt ||
         d.hotspotIp != lastData_.hotspotIp ||
@@ -78,7 +76,6 @@ void Display::update(const BmsData& d) {
 }
 
 void Display::drawFullPage(const BmsData& d) {
-  // 只有页面切换/首次显示才整屏清空。
   tft_.fillScreen(TFT_BLACK);
   firstDashboard_ = (d.online || d.bootState == BOOT_CONNECTED);
 
@@ -157,13 +154,12 @@ void Display::drawDashboard(const BmsData& d, bool force) {
     drawVoltage(d);
     drawCurrent(d);
     drawPower(d);
-    drawCapacity(d);
+    drawTemperature(d);
     drawRange(d);
     drawSocBar(d);
     return;
   }
 
-  // BLE 数据变化后，只刷新发生变化的区域。
   if (d.online != lastOnline_ || d.deviceName != lastDeviceName_)
     drawStatus(d);
 
@@ -179,8 +175,9 @@ void Display::drawDashboard(const BmsData& d, bool force) {
   if (changed(d.power,lastData_.power,1.0f))
     drawPower(d);
 
-  if (changed(d.remainingCapacityAh,lastData_.remainingCapacityAh,0.1f))
-    drawCapacity(d);
+  if (changed(d.remainingCapacityAh,lastData_.remainingCapacityAh,0.1f) ||
+      changed(d.temperature1,lastData_.temperature1,0.1f))
+    drawTemperature(d);
 
   if (changed(d.remainingRangeKm,lastData_.remainingRangeKm,0.1f))
     drawRange(d);
@@ -207,24 +204,29 @@ void Display::drawStatus(const BmsData& d) {
 void Display::drawSoc(const BmsData& d) {
   socSprite_.fillSprite(TFT_BLACK);
 
-  // SOC 主数字：占左侧区域中央，使用 TFT_eSPI 7 号大字体。
   String value=String(d.soc,0);
   socSprite_.setTextColor(TFT_GREEN,TFT_BLACK);
   socSprite_.drawCentreString(value,68,2,7);
 
-  // 百分号独立缩小，放在主数字右下角。
-  // 位置根据 0~100 三种位数统一放在数字区域右下。
   socSprite_.setTextColor(TFT_GREEN,TFT_BLACK);
   socSprite_.drawString("%",105,43,2);
-
-  FontGB2312::drawCenterString(
-    socSprite_,68,53,"剩余电量",
-    TFT_WHITE,TFT_BLACK,1);
 
   socSprite_.pushSprite(0,21);
 }
 
-void Display::drawTemperature(const BmsData& d) {\n  leftInfoSprite_.fillSprite(TFT_BLACK);\n  FontGB2312::drawText(leftInfoSprite_,0,1,"容量",TFT_CYAN,TFT_BLACK,1);\n  leftInfoSprite_.drawRightString(String(d.remainingCapacityAh,1)+"Ah",66,0,2);\n  FontGB2312::drawText(leftInfoSprite_,72,1,"温度",TFT_YELLOW,TFT_BLACK,1);\n  leftInfoSprite_.drawRightString(String(d.temperature1,1)+"C",139,0,2);\n  leftInfoSprite_.pushSprite(0,89);\n}\n\nvoid Display::clearRow() {
+void Display::drawTemperature(const BmsData& d) {
+  leftInfoSprite_.fillSprite(TFT_BLACK);
+
+  FontGB2312::drawText(leftInfoSprite_,0,1,"容量",TFT_CYAN,TFT_BLACK,1);
+  leftInfoSprite_.drawRightString(String(d.remainingCapacityAh,1)+"Ah",66,0,2);
+
+  FontGB2312::drawText(leftInfoSprite_,72,1,"温度",TFT_YELLOW,TFT_BLACK,1);
+  leftInfoSprite_.drawRightString(String(d.temperature1,1)+"C",139,0,2);
+
+  leftInfoSprite_.pushSprite(0,89);
+}
+
+void Display::clearRow() {
   rowSprite_.fillSprite(TFT_BLACK);
 }
 
@@ -249,18 +251,11 @@ void Display::drawPower(const BmsData& d) {
   rowSprite_.pushSprite(145,82);
 }
 
-void Display::drawCapacity(const BmsData& d) {
-  clearRow();
-  FontGB2312::drawText(rowSprite_,0,5,"剩余容量",TFT_CYAN,TFT_BLACK,1);
-  rowSprite_.drawRightString(String(d.remainingCapacityAh,1)+" Ah",174,2,4);
-  rowSprite_.pushSprite(145,111);
-}
-
 void Display::drawRange(const BmsData& d) {
   clearRow();
   FontGB2312::drawText(rowSprite_,0,5,"剩余里程",TFT_LIGHTGREY,TFT_BLACK,1);
   rowSprite_.drawRightString(String(d.remainingRangeKm,1)+" km",174,4,2);
-  rowSprite_.pushSprite(145,140);
+  rowSprite_.pushSprite(145,111);
 }
 
 void Display::drawSocBar(const BmsData& d) {
