@@ -29,7 +29,7 @@ public:
   const String& getConfiguredAddress() const { return configuredAddress_; }
   void setConfiguredAddress(const String& mac);
   uint8_t getScanAttempt() const { return scanAttempt_; }
-  void setProtocol32S(bool enable) { protocol32S_=enable; }
+  void setProtocol32S(bool enable){ protocol32S_=enable; protocol_.setProtocol32S(enable); }
   bool isProtocol32S() const { return protocol32S_; }
 
 private:
@@ -48,7 +48,6 @@ private:
   static void notifyCallback(NimBLERemoteCharacteristic*, uint8_t*, size_t, bool);
   void handleNotification(const uint8_t*, size_t);
   void request(uint8_t);
-  bool connectDevice(const NimBLEAdvertisedDevice*);
   bool isCandidate(const NimBLEAdvertisedDevice*) const;
   void setStatus(BmsBootState state, const String& message);
 };
