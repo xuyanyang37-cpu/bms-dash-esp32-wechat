@@ -2,6 +2,7 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <WebSocketsServer.h>
+#include <LittleFS.h>
 #include "tft_setup.h"
 #include <TFT_eSPI.h>
 #include <NimBLEDevice.h>
@@ -14,7 +15,6 @@
 #include <vector>
 
 #include "ui_font_zh.h"
-#include "web_ui.h"
 
 // If the screen is mirrored, try 3 instead of 1.
 static const uint8_t TFT_ROTATION = 1;
@@ -97,6 +97,7 @@ static NimBLEServer *setupServer = nullptr;
 static WebServer webServer(WEB_HTTP_PORT);
 static WebSocketsServer webSocket(WEB_WS_PORT);
 static bool webServerReady = false;
+static bool littleFsReady = false;
 static NimBLECharacteristic *setupTxCharacteristic = nullptr;
 static NimBLEClient *bleClient = nullptr;
 static const NimBLEAdvertisedDevice *targetAdvertisedDevice = nullptr;
@@ -2076,12 +2077,70 @@ static void initSetupBleService() {
 }
 
 
+static String webContentType(const String &path) {
+  if (path.endsWith(".html")) return "text/html; charset=utf-8";
+  if (path.endsWith(".css")) return "text/css; charset=utf-8";
+  if (path.endsWith(".js")) return "application/javascript; charset=utf-8";
+  if (path.endsWith(".json")) return "application/json; charset=utf-8";
+  if (path.endsWith(".svg")) return "image/svg+xml";
+  if (path.endsWith(".png")) return "image/png";
+  if (path.endsWith(".jpg") || path.endsWith(".jpeg")) return "image/jpeg";
+  if (path.endsWith(".ico")) return "image/x-icon";
+  if (path.endsWith(".woff")) return "font/woff";
+  if (path.endsWith(".woff2")) return "font/woff2";
+  if (path.endsWith(".txt")) return "text/plain; charset=utf-8";
+  return "application/octet-stream";
+}
+
+static bool webPathSafe(const String &path) {
+  return path.indexOf("..") < 0;
+}
+
+static bool webSendFile(String path) {
+  if (!littleFsReady) return false;
+  if (path.length() == 0) path = "/";
+  if (path == "/") path = "/index.html";
+  if (!webPathSafe(path)) return false;
+
+  File file = LittleFS.open(path, "r");
+  if (!file || file.isDirectory()) return false;
+
+  const String contentType = webContentType(path);
+  webServer.streamFile(file, contentType);
+  file.close();
+  return true;
+}
+
 static void webHandleRoot() {
-  webServer.send_P(200, "text/html; charset=utf-8", WEB_INDEX_HTML);
+  if (!webSendFile("/index.html")) {
+    webServer.send(503, "text/plain; charset=utf-8",
+                   "LittleFS is not ready or index.html is missing. Upload Vue dist/ to ESP32 LittleFS.");
+  }
+}
+
+static void webHandleStatic() {
+  if (!webSendFile(webServer.uri())) {
+    // Vue history fallback: client-side routes still receive index.html.
+    if (webServer.method() == HTTP_GET && webSendFile("/index.html")) return;
+    webServer.send(404, "text/plain; charset=utf-8", "File Not Found");
+  }
 }
 
 static void webHandleNotFound() {
+  if (webServer.method() == HTTP_GET && webSendFile(webServer.uri())) return;
+  if (webServer.method() == HTTP_GET && webSendFile("/index.html")) return;
   webServer.send(404, "text/plain; charset=utf-8", "Not Found");
+}
+
+static void webHandleFsInfo() {
+  String json = F("{\"type\":\"fs\",\"ready\":");
+  json += littleFsReady ? F("true") : F("false");
+  json += F(",\"total\":");
+  json += littleFsReady ? String(LittleFS.totalBytes()) : F("0");
+  json += F(",\"used\":");
+  json += littleFsReady ? String(LittleFS.usedBytes()) : F("0");
+  json += F("}");
+  webServer.send(200, "application/json; charset=utf-8", json);
 }
 
 static void webSocketEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t length) {
@@ -2109,14 +2168,30 @@ static void webSocketEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t 
 }
 
 static void initWebServer() {
+  littleFsReady = LittleFS.begin(false);
+  if (!littleFsReady) {
+    Serial.println("[WEB] LittleFS mount failed; formatting filesystem...");
+    littleFsReady = LittleFS.begin(true);
+  }
+  if (littleFsReady) {
+    Serial.printf("[WEB] LittleFS ready total=%u used=%u\\r\\n",
+                  (unsigned) LittleFS.totalBytes(),
+                  (unsigned) LittleFS.usedBytes());
+  } else {
+    Serial.println("[WEB] LittleFS unavailable");
+  }
+
   WiFi.mode(WIFI_AP);
   WiFi.softAP(WEB_AP_SSID, WEB_AP_PASSWORD);
   delay(100);
+
   webServer.on("/", HTTP_GET, webHandleRoot);
   webServer.on("/status", HTTP_GET, []() {
     webServer.send(200, "application/json; charset=utf-8", buildStatusJson());
   });
+  webServer.on("/fs-info", HTTP_GET, webHandleFsInfo);
   webServer.onNotFound(webHandleNotFound);
+
   webServer.begin();
   webSocket.begin();
   webSocket.onEvent(webSocketEvent);
