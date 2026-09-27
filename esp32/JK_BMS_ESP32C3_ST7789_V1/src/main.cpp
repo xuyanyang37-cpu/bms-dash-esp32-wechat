@@ -4,12 +4,12 @@
 #include "JkBle.h"
 #include "Display.h"
 BmsData g_bmsData;
-static JkBle jk;static Display display;
+static JkBle jk; static Display display;
 void setup(){
-  Serial.begin(115200);delay(500);
+  Serial.begin(115200); delay(500);
   Serial.println("ESP32-C3 JK BMS + ST7789 V1");
   Serial.println("BL=5 CS=3 DC=2 RES=10 SDA=7 SCL=6");
-  display.begin();jk.begin();jk.scanAndConnect(6);
+  display.begin(); jk.begin(); jk.scanAndConnect(6);
 }
 void loop(){
   jk.loop();
