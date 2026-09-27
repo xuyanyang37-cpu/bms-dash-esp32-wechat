@@ -34,7 +34,7 @@ public:
 
 private:
   NimBLEClient* client_;
-  NimBLERemoteCharacteristic* ch_;
+  NimBLERemoteCharacteristic* ch_;\n  NimBLERemoteCharacteristic* writeCh_;\n  NimBLERemoteCharacteristic* notifyCh_;
   JkProtocol protocol_;
   uint8_t counter_;
   uint32_t lastRequest_;\n  uint32_t lastReconnectAttempt_;
