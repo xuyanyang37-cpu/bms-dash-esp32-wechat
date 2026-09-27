@@ -34,7 +34,6 @@ private:
   void drawSocBar(const BmsData& d);
 
   bool changed(float a, float b, float eps) const;
-  void clearRow();
 };
 
 #endif
