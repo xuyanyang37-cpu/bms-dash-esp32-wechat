@@ -6,14 +6,14 @@
  * JK BMS ST7789 1.9" / 320x170
  * UI 2.0
  *
- * 按 11.png 的设计思路重新整理：
+ * 严格按照界面设计：
  *  - 左侧：SOC 大数字
  *  - 左下：温度 + 单体压差
  *  - 左下右侧：剩余容量
  *  - 右侧：电压 / 电流 / 功率 / 剩余里程
  *  - 底部：SOC 渐变条
  *
- * 颜色集中在本文件顶部，后续可直接调整。
+ * 仪表盘不显示“蓝牙已连接”等状态文字。
  */
 
 namespace {
@@ -26,7 +26,6 @@ namespace {
   static const uint16_t UI_RANGE       = TFT_CYAN;
   static const uint16_t UI_TEMP        = TFT_GREEN;
 
-  // 低电量阈值：可直接修改
   static const float SOC_WARN_THRESHOLD = 30.0f;
   static const float SOC_CRITICAL_THRESHOLD = 15.0f;
 
@@ -62,10 +61,8 @@ namespace {
     sprite.setTextColor(color, UI_PANEL);
     sprite.drawCentreString(String(icon), 15, 1, 4);
 
-    // 中文标题
     FontGB2312::drawText(sprite, 31, 5, String(label), color, UI_PANEL, 1);
 
-    // 数值使用 2 号字体，保证 320x170 横屏下不拥挤
     sprite.setTextColor(color, UI_PANEL);
     sprite.drawRightString(value, 164, 4, 2);
   }
@@ -83,19 +80,16 @@ void Display::begin() {
   tft_.setRotation(1);
   tft_.fillScreen(TFT_BLACK);
 
-  statusSprite_.setColorDepth(16);
   socSprite_.setColorDepth(16);
   leftInfoSprite_.setColorDepth(16);
   rowSprite_.setColorDepth(16);
   barSprite_.setColorDepth(16);
 
-  statusSprite_.createSprite(320, 22);
   socSprite_.createSprite(140, 78);
   leftInfoSprite_.createSprite(140, 67);
   rowSprite_.createSprite(168, 27);
   barSprite_.createSprite(304, 9);
 
-  statusSprite_.fillSprite(TFT_BLACK);
   socSprite_.fillSprite(TFT_BLACK);
   leftInfoSprite_.fillSprite(TFT_BLACK);
   rowSprite_.fillSprite(TFT_BLACK);
@@ -113,8 +107,6 @@ void Display::update(const BmsData& d) {
     drawFullPage(d);
     lastBootState_ = d.bootState;
     lastData_ = d;
-    lastOnline_ = d.online;
-    lastDeviceName_ = d.deviceName;
     return;
   }
 
@@ -132,8 +124,6 @@ void Display::update(const BmsData& d) {
   drawDashboard(d, firstDashboard_);
   firstDashboard_ = false;
   lastData_ = d;
-  lastOnline_ = d.online;
-  lastDeviceName_ = d.deviceName;
 }
 
 void Display::drawFullPage(const BmsData& d) {
@@ -210,7 +200,6 @@ void Display::drawFullPage(const BmsData& d) {
 void Display::drawDashboard(const BmsData& d, bool force) {
   if (force) {
     tft_.fillScreen(TFT_BLACK);
-    drawStatus(d);
     drawSoc(d);
     drawVoltage(d);
     drawCurrent(d);
@@ -218,12 +207,6 @@ void Display::drawDashboard(const BmsData& d, bool force) {
     drawTemperature(d);
     drawRange(d);
     drawSocBar(d);
-    return;
-  }
-
-  // UI 2.0 仪表盘不占用顶部状态栏。
-  if (d.online != lastOnline_ || d.deviceName != lastDeviceName_) {
-    drawDashboard(d, true);
     return;
   }
 
@@ -250,10 +233,6 @@ void Display::drawDashboard(const BmsData& d, bool force) {
     drawRange(d);
 }
 
-void Display::drawStatus(const BmsData&) {
-  // UI 2.0 不显示旧状态栏，保留接口兼容原有 Display.h。
-}
-
 void Display::drawSoc(const BmsData& d) {
   socSprite_.fillSprite(TFT_BLACK);
   drawPanel(socSprite_, 0, 0, 140, 78);
@@ -264,7 +243,6 @@ void Display::drawSoc(const BmsData& d) {
   socSprite_.setTextColor(color,UI_PANEL);
   socSprite_.drawCentreString(value,70,0,7);
 
-  // 百分号明显小于主数字，并靠右下
   socSprite_.setTextColor(color,UI_PANEL);
   socSprite_.drawString("%",108,47,4);
 
@@ -274,7 +252,7 @@ void Display::drawSoc(const BmsData& d) {
 void Display::drawTemperature(const BmsData& d) {
   leftInfoSprite_.fillSprite(TFT_BLACK);
 
-  // 左下温度 / 单体压差
+  // 左下：温度 + 单体压差
   leftInfoSprite_.fillRoundRect(0,0,73,67,7,UI_PANEL);
   String temp=String(d.temperature1,1)+"C";
   String delta=String(d.deltaCellVoltage*1000.0f,0)+"mV";
@@ -283,7 +261,7 @@ void Display::drawTemperature(const BmsData& d) {
   leftInfoSprite_.drawString(temp,4,3,2);
   leftInfoSprite_.drawString(delta,4,31,2);
 
-  // 剩余容量
+  // 右侧：剩余容量
   leftInfoSprite_.fillRoundRect(75,0,65,67,7,UI_PANEL);
   leftInfoSprite_.setTextColor(UI_WHITE,UI_PANEL);
   leftInfoSprite_.drawCentreString("Ah",107,1,2);
