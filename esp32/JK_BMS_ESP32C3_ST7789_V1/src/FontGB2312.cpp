@@ -137,10 +137,10 @@ static void drawGlyph(TFT_eSprite& sprite, int16_t x, int16_t y,
                       uint8_t scale) {
   if (code < 0x80) {
     if (code == ' ') {
-      if (bg != TFT_TRANSPARENT) sprite.fillRect(x, y, 8 * scale, 16 * scale, bg);
+      sprite.fillRect(x, y, 8 * scale, 16 * scale, bg);
       return;
     }
-    sprite.drawChar((char)code, x, y, 1, color, bg, scale);
+    sprite.drawChar(x, y, (char)code, color, bg, scale);
     return;
   }
 
@@ -160,7 +160,7 @@ static void drawGlyph(TFT_eSprite& sprite, int16_t x, int16_t y,
           sprite.fillRect(x + col * scale, y + row * scale,
                           scale, scale, color);
         }
-      } else if (bg != TFT_TRANSPARENT) {
+      } else {
         if (scale == 1) {
           sprite.drawPixel(x + col, y + row, bg);
         } else {
