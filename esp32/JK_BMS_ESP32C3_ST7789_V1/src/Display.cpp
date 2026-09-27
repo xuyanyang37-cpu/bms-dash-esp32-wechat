@@ -1,13 +1,74 @@
 #include "Display.h"
 #include "FontGB2312.h"
+#include <math.h>
 
-static uint16_t lerp565(uint16_t a, uint16_t b, uint16_t t) {
-  uint8_t ar=(a>>11)&0x1F, ag=(a>>5)&0x3F, ab=a&0x1F;
-  uint8_t br=(b>>11)&0x1F, bg=(b>>5)&0x3F, bb=b&0x1F;
-  uint8_t rr=ar+((br-ar)*t)/100;
-  uint8_t rg=ag+((bg-ag)*t)/100;
-  uint8_t rb=ab+((bb-ab)*t)/100;
-  return (rr<<11)|(rg<<5)|rb;
+/*
+ * JK BMS ST7789 1.9" / 320x170
+ * UI 2.0
+ *
+ * 按 11.png 的设计思路重新整理：
+ *  - 左侧：SOC 大数字
+ *  - 左下：温度 + 单体压差
+ *  - 左下右侧：剩余容量
+ *  - 右侧：电压 / 电流 / 功率 / 剩余里程
+ *  - 底部：SOC 渐变条
+ *
+ * 颜色集中在本文件顶部，后续可直接调整。
+ */
+
+namespace {
+  static const uint16_t UI_PANEL       = 0x0B2F50;
+  static const uint16_t UI_PANEL_DARK  = 0x08243F;
+  static const uint16_t UI_WHITE       = TFT_WHITE;
+  static const uint16_t UI_VOLTAGE     = TFT_YELLOW;
+  static const uint16_t UI_CURRENT     = TFT_GREEN;
+  static const uint16_t UI_POWER       = TFT_RED;
+  static const uint16_t UI_RANGE       = TFT_CYAN;
+  static const uint16_t UI_TEMP        = TFT_GREEN;
+
+  // 低电量阈值：可直接修改
+  static const float SOC_WARN_THRESHOLD = 30.0f;
+  static const float SOC_CRITICAL_THRESHOLD = 15.0f;
+
+  static uint16_t lerp565(uint16_t a, uint16_t b, uint16_t t) {
+    uint8_t ar=(a>>11)&0x1F, ag=(a>>5)&0x3F, ab=a&0x1F;
+    uint8_t br=(b>>11)&0x1F, bg=(b>>5)&0x3F, bb=b&0x1F;
+    uint8_t rr=ar+((br-ar)*t)/100;
+    uint8_t rg=ag+((bg-ag)*t)/100;
+    uint8_t rb=ab+((bb-ab)*t)/100;
+    return (rr<<11)|(rg<<5)|rb;
+  }
+
+  static uint16_t socColor(float soc) {
+    if (soc <= SOC_CRITICAL_THRESHOLD) return TFT_RED;
+    if (soc <= SOC_WARN_THRESHOLD) return TFT_YELLOW;
+    return UI_WHITE;
+  }
+
+  static void drawPanel(TFT_eSprite& sprite, int x, int y, int w, int h) {
+    sprite.fillRoundRect(x, y, w, h, 7, UI_PANEL);
+  }
+
+  static void drawMetricRow(TFT_eSprite& sprite,
+                            char icon,
+                            const char* label,
+                            const String& value,
+                            uint16_t color) {
+    sprite.fillSprite(TFT_BLACK);
+    sprite.fillRoundRect(0, 0, 168, 27, 7, UI_PANEL);
+
+    // 左侧圆形 V/A/W 标识
+    sprite.drawCircle(15, 13, 12, color);
+    sprite.setTextColor(color, UI_PANEL);
+    sprite.drawCentreString(String(icon), 15, 1, 4);
+
+    // 中文标题
+    FontGB2312::drawText(sprite, 31, 5, String(label), color, UI_PANEL, 1);
+
+    // 数值使用 2 号字体，保证 320x170 横屏下不拥挤
+    sprite.setTextColor(color, UI_PANEL);
+    sprite.drawRightString(value, 164, 4, 2);
+  }
 }
 
 bool Display::changed(float a, float b, float eps) const {
@@ -29,10 +90,10 @@ void Display::begin() {
   barSprite_.setColorDepth(16);
 
   statusSprite_.createSprite(320, 22);
-  socSprite_.createSprite(140, 65);
-  leftInfoSprite_.createSprite(140, 30);
-  rowSprite_.createSprite(175, 28);
-  barSprite_.createSprite(304, 8);
+  socSprite_.createSprite(140, 78);
+  leftInfoSprite_.createSprite(140, 67);
+  rowSprite_.createSprite(168, 27);
+  barSprite_.createSprite(304, 9);
 
   statusSprite_.fillSprite(TFT_BLACK);
   socSprite_.fillSprite(TFT_BLACK);
@@ -48,7 +109,7 @@ void Display::begin() {
 void Display::update(const BmsData& d) {
   if (!initialized_) return;
 
-  if (d.bootState != lastBootState_ || (d.hotspot != lastData_.hotspot)) {
+  if (d.bootState != lastBootState_ || d.hotspot != lastData_.hotspot) {
     drawFullPage(d);
     lastBootState_ = d.bootState;
     lastData_ = d;
@@ -160,11 +221,16 @@ void Display::drawDashboard(const BmsData& d, bool force) {
     return;
   }
 
-  if (d.online != lastOnline_ || d.deviceName != lastDeviceName_)
-    drawStatus(d);
+  // UI 2.0 仪表盘不占用顶部状态栏。
+  if (d.online != lastOnline_ || d.deviceName != lastDeviceName_) {
+    drawDashboard(d, true);
+    return;
+  }
 
-  if (changed(d.soc,lastData_.soc,0.5f))
+  if (changed(d.soc,lastData_.soc,0.5f)) {
     drawSoc(d);
+    drawSocBar(d);
+  }
 
   if (changed(d.totalVoltage,lastData_.totalVoltage,0.1f))
     drawVoltage(d);
@@ -176,54 +242,56 @@ void Display::drawDashboard(const BmsData& d, bool force) {
     drawPower(d);
 
   if (changed(d.remainingCapacityAh,lastData_.remainingCapacityAh,0.1f) ||
-      changed(d.temperature1,lastData_.temperature1,0.1f))
+      changed(d.temperature1,lastData_.temperature1,0.1f) ||
+      changed(d.deltaCellVoltage,lastData_.deltaCellVoltage,0.001f))
     drawTemperature(d);
 
   if (changed(d.remainingRangeKm,lastData_.remainingRangeKm,0.1f))
     drawRange(d);
-
-  if (changed(d.soc,lastData_.soc,0.5f))
-    drawSocBar(d);
 }
 
-void Display::drawStatus(const BmsData& d) {
-  statusSprite_.fillSprite(TFT_BLACK);
-
-  FontGB2312::drawText(statusSprite_,5,3,
-    d.online ? "蓝牙已连接" : "蓝牙断开",
-    d.online ? TFT_GREEN : TFT_LIGHTGREY,TFT_BLACK,1);
-
-  if (d.deviceName.length()) {
-    FontGB2312::drawRightString(statusSprite_,315,3,d.deviceName,
-      TFT_LIGHTGREY,TFT_BLACK,1);
-  }
-
-  statusSprite_.pushSprite(0,0);
+void Display::drawStatus(const BmsData&) {
+  // UI 2.0 不显示旧状态栏，保留接口兼容原有 Display.h。
 }
 
 void Display::drawSoc(const BmsData& d) {
   socSprite_.fillSprite(TFT_BLACK);
+  drawPanel(socSprite_, 0, 0, 140, 78);
 
   String value=String(d.soc,0);
-  socSprite_.setTextColor(TFT_GREEN,TFT_BLACK);
-  socSprite_.drawCentreString(value,68,2,7);
+  uint16_t color=socColor(d.soc);
 
-  socSprite_.setTextColor(TFT_GREEN,TFT_BLACK);
-  socSprite_.drawString("%",105,43,2);
+  socSprite_.setTextColor(color,UI_PANEL);
+  socSprite_.drawCentreString(value,70,0,7);
 
-  socSprite_.pushSprite(0,21);
+  // 百分号明显小于主数字，并靠右下
+  socSprite_.setTextColor(color,UI_PANEL);
+  socSprite_.drawString("%",108,47,4);
+
+  socSprite_.pushSprite(4,4);
 }
 
 void Display::drawTemperature(const BmsData& d) {
   leftInfoSprite_.fillSprite(TFT_BLACK);
 
-  FontGB2312::drawText(leftInfoSprite_,0,1,"容量",TFT_CYAN,TFT_BLACK,1);
-  leftInfoSprite_.drawRightString(String(d.remainingCapacityAh,1)+"Ah",66,0,2);
+  // 左下温度 / 单体压差
+  leftInfoSprite_.fillRoundRect(0,0,73,67,7,UI_PANEL);
+  String temp=String(d.temperature1,1)+"C";
+  String delta=String(d.deltaCellVoltage*1000.0f,0)+"mV";
 
-  FontGB2312::drawText(leftInfoSprite_,72,1,"温度",TFT_YELLOW,TFT_BLACK,1);
-  leftInfoSprite_.drawRightString(String(d.temperature1,1)+"C",139,0,2);
+  leftInfoSprite_.setTextColor(UI_TEMP,UI_PANEL);
+  leftInfoSprite_.drawString(temp,4,3,2);
+  leftInfoSprite_.drawString(delta,4,31,2);
 
-  leftInfoSprite_.pushSprite(0,89);
+  // 剩余容量
+  leftInfoSprite_.fillRoundRect(75,0,65,67,7,UI_PANEL);
+  leftInfoSprite_.setTextColor(UI_WHITE,UI_PANEL);
+  leftInfoSprite_.drawCentreString("Ah",107,1,2);
+
+  String cap=String(d.remainingCapacityAh,1);
+  leftInfoSprite_.drawCentreString(cap,107,25,4);
+
+  leftInfoSprite_.pushSprite(4,84);
 }
 
 void Display::clearRow() {
@@ -231,31 +299,29 @@ void Display::clearRow() {
 }
 
 void Display::drawVoltage(const BmsData& d) {
-  clearRow();
-  FontGB2312::drawText(rowSprite_,0,5,"电压",TFT_CYAN,TFT_BLACK,1);
-  rowSprite_.drawRightString(String(d.totalVoltage,1)+" V",174,2,4);
-  rowSprite_.pushSprite(145,24);
+  drawMetricRow(rowSprite_,'V',"电压",String(d.totalVoltage,2)+"V",UI_VOLTAGE);
+  rowSprite_.pushSprite(148,4);
 }
 
 void Display::drawCurrent(const BmsData& d) {
-  clearRow();
-  FontGB2312::drawText(rowSprite_,0,5,"电流",TFT_YELLOW,TFT_BLACK,1);
-  rowSprite_.drawRightString(String(d.current,1)+" A",174,2,4);
-  rowSprite_.pushSprite(145,53);
+  drawMetricRow(rowSprite_,'A',"电流",String(d.current,1)+"A",UI_CURRENT);
+  rowSprite_.pushSprite(148,33);
 }
 
 void Display::drawPower(const BmsData& d) {
-  clearRow();
-  FontGB2312::drawText(rowSprite_,0,5,"功率",TFT_ORANGE,TFT_BLACK,1);
-  rowSprite_.drawRightString(String(d.power,0)+" W",174,2,4);
-  rowSprite_.pushSprite(145,82);
+  drawMetricRow(rowSprite_,'W',"功率",String(d.power,0)+"W",UI_POWER);
+  rowSprite_.pushSprite(148,62);
 }
 
 void Display::drawRange(const BmsData& d) {
-  clearRow();
-  FontGB2312::drawText(rowSprite_,0,5,"剩余里程",TFT_LIGHTGREY,TFT_BLACK,1);
-  rowSprite_.drawRightString(String(d.remainingRangeKm,1)+" km",174,4,2);
-  rowSprite_.pushSprite(145,111);
+  rowSprite_.fillSprite(TFT_BLACK);
+  rowSprite_.fillRoundRect(0,0,168,27,7,UI_PANEL);
+
+  FontGB2312::drawText(rowSprite_,8,5,"剩余里程",UI_RANGE,UI_PANEL,1);
+  rowSprite_.setTextColor(UI_RANGE,UI_PANEL);
+  rowSprite_.drawRightString(String(d.remainingRangeKm,0)+" KM",164,4,2);
+
+  rowSprite_.pushSprite(148,91);
 }
 
 void Display::drawSocBar(const BmsData& d) {
@@ -266,27 +332,27 @@ void Display::drawSocBar(const BmsData& d) {
   if(ratio>1) ratio=1;
 
   const int w=304;
-  for(int i=0;i<16;i++) {
-    float p0=i/16.0f;
+  const int segments=32;
+
+  // UI 2.0：绿 -> 黄 -> 红渐变
+  for(int i=0;i<segments;i++) {
+    float p0=(float)i/segments;
     uint16_t color;
 
-    if(p0<0.25f)
-      color=lerp565(TFT_RED,TFT_ORANGE,(uint16_t)(p0*400));
-    else if(p0<0.5f)
-      color=lerp565(TFT_ORANGE,TFT_YELLOW,(uint16_t)((p0-0.25f)*400));
-    else if(p0<0.75f)
-      color=lerp565(TFT_YELLOW,TFT_GREEN,(uint16_t)((p0-0.5f)*400));
+    if(p0<0.5f)
+      color=lerp565(TFT_GREEN,TFT_YELLOW,(uint16_t)(p0*200));
     else
-      color=lerp565(TFT_GREEN,TFT_CYAN,(uint16_t)((p0-0.75f)*400));
+      color=lerp565(TFT_YELLOW,TFT_RED,(uint16_t)((p0-0.5f)*200));
 
-    int sx=(w*i)/16;
-    int sw=(w*(i+1))/16-(w*i)/16;
+    int sx=(w*i)/segments;
+    int sw=(w*(i+1))/segments-(w*i)/segments;
 
-    if ((i+1)/16.0f<=ratio)
-      barSprite_.fillRect(sx,0,sw,8,color);
+    if ((i+1)/(float)segments <= ratio)
+      barSprite_.fillRect(sx,0,sw,9,color);
     else
-      barSprite_.drawRect(sx,0,sw,8,TFT_DARKGREY);
+      barSprite_.fillRect(sx,0,sw,9,UI_PANEL_DARK);
   }
 
-  barSprite_.pushSprite(8,162);
+  barSprite_.drawRoundRect(0,0,w-1,8,3,TFT_DARKGREY);
+  barSprite_.pushSprite(8,160);
 }
