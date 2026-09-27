@@ -19,7 +19,7 @@ struct BmsData {
   uint8_t minCell=0, maxCell=0;
   float cellVoltage[JK_MAX_CELLS]={0};
   float temperature1=0, temperature2=0, mosTemperature=0;
-  float remainingCapacityAh=0, totalCapacityAh=0, balancingCurrent=0;
+  float remainingCapacityAh=0, totalCapacityAh=0, balancingCurrent=0, remainingPowerWh=0;
   bool charging=false, discharging=false, balancing=false, heating=false;
   uint32_t errors=0, updateMs=0;
 
