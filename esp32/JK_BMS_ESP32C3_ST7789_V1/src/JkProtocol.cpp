@@ -6,14 +6,16 @@ uint32_t JkProtocol::u32le(const uint8_t*p){return (uint32_t)p[0]|((uint32_t)p[1
 int16_t JkProtocol::s16le(const uint8_t*p){return (int16_t)u16le(p);}
 bool JkProtocol::validCrc(const uint8_t*p,size_t n){if(n<5)return false;uint8_t s=0;for(size_t i=0;i+1<n;i++)s+=p[i];return s==p[n-1];}
 int JkProtocol::detectOffset(const uint8_t*p,size_t n)const{
-  if(n>=150){uint32_t v=u32le(p+118);if(v>1000&&v<200000)return 0;
-    v=u32le(p+150);if(v>1000&&v<200000)return 32;}
+#if JK_PROTOCOL_32S
+  return 32;
+#else
   return 0;
+#endif
 }
 bool JkProtocol::parseMainFrame(const uint8_t*p,size_t n,BmsData&o){
   int off=detectOffset(p,n);
-  if(n<(size_t)(138+off))return false;
-  uint8_t cells=off?32:24;
+  if(n<(size_t)(184+off))return false;
+  uint8_t cells=32;
   float minV=100,maxV=0;uint8_t minC=0,maxC=0;
   for(uint8_t i=0;i<cells;i++){
     size_t pos=6+i*2;if(pos+1>=n)break;
@@ -28,7 +30,12 @@ bool JkProtocol::parseMainFrame(const uint8_t*p,size_t n,BmsData&o){
   o.temperature1=s16le(p+130+off)*0.1f;
   o.temperature2=s16le(p+132+off)*0.1f;
   o.mosTemperature=s16le(p+(off?112+off:134))*0.1f;
-  if(off&&n>=138+off)o.errors=u32le(p+134+off);
+  if(off)o.errors=u32le(p+134+off);else o.errors=u16le(p+136);
+  o.balancing = p[169+off] != 0;
+  o.charging = p[166+off] != 0;
+  o.discharging = p[167+off] != 0;
+  o.heating = p[183+off] != 0;
+  o.soc = p[141+off];
   o.valid=o.totalVoltage>0.1f;o.online=o.valid;o.updateMs=millis();
   return o.valid;
 }
