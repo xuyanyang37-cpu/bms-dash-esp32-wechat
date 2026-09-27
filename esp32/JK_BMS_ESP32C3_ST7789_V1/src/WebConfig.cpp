@@ -30,11 +30,11 @@ String WebConfig::makeStatusJson(){
   j+=",\"current\":"+String(g_bmsData.current,3);
   j+=",\"power\":"+String(g_bmsData.power,1);
   j+=",\"remainingAh\":"+String(g_bmsData.remainingCapacityAh,2);
-  j+=",\"remainingWh\":"+String(g_bmsData.remainingPowerWh,1);
+  j+=",\"remainingKm\":"+String(g_bmsData.remainingRangeKm,1);
+  j+=",\"consumption\":"+String(g_bmsData.energyConsumptionWhKm,1);
   j+=",\"totalAh\":"+String(g_bmsData.totalCapacityAh,2);
   j+=",\"soc\":"+String(g_bmsData.soc,1);
-  j+="}";
-  return j;
+  return j+"}";
 }
 
 String WebConfig::makePage(){
@@ -45,15 +45,20 @@ String WebConfig::makePage(){
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>JK BMS 设置</title>
 <style>
-*{box-sizing:border-box}body{font-family:Arial,"Microsoft YaHei",sans-serif;background:#0b1015;color:#eee;margin:0;padding:14px}
+*{box-sizing:border-box}
+body{font-family:Arial,"Microsoft YaHei",sans-serif;background:#0b1015;color:#eee;margin:0;padding:14px}
 .card{max-width:760px;margin:auto;background:#151c23;border-radius:16px;padding:18px;box-shadow:0 5px 25px #000}
-h2{margin:0 0 12px}button{padding:11px 15px;margin:5px;border:0;border-radius:9px;background:#1976d2;color:#fff;font-size:15px}
+h2{margin:0 0 12px}
+button{padding:11px 15px;margin:5px;border:0;border-radius:9px;background:#1976d2;color:#fff;font-size:15px}
 input,select{padding:11px;margin:5px 0;width:100%;border-radius:8px;border:1px solid #4a5662;background:#0d1217;color:#fff}
 .item{padding:12px;border:1px solid #394652;border-radius:10px;margin:8px 0;background:#10161c}
-.item.selected{border-color:#00d4ff;background:#12222a}
-.row{display:flex;gap:8px;align-items:center;justify-content:space-between}.small{color:#aeb8c2;font-size:13px}
-.ok{color:#45e27b}.warn{color:#ffc107}.data{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:12px}
-.data div{background:#0e141a;border-radius:9px;padding:10px}.num{font-size:20px;font-weight:bold;color:#55d9ff}
+.row{display:flex;gap:8px;align-items:center;justify-content:space-between}
+.small{color:#aeb8c2;font-size:13px}
+.ok{color:#45e27b}.warn{color:#ffc107}
+.data{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:12px}
+.data div{background:#0e141a;border-radius:9px;padding:10px}
+.num{font-size:20px;font-weight:bold;color:#55d9ff}
+.tip{color:#8e9aa5;font-size:13px;margin:4px 0 10px}
 </style>
 </head>
 <body>
@@ -70,6 +75,10 @@ input,select{padding:11px;margin:5px 0;width:100%;border-radius:8px;border:1px s
 <option value="24">JK02_24S</option>
 </select>
 
+<label>每公里耗电量（Wh/km）</label>
+<input id="consumption" type="number" min="1" max="1000" step="1" value="100">
+<div class="tip">用于估算剩余公里数：剩余容量 × 电压 ÷ 每公里耗电量</div>
+
 <div>
 <button onclick="scan()">扫描蓝牙电池</button>
 <button onclick="save()">保存参数</button>
@@ -81,7 +90,7 @@ input,select{padding:11px;margin:5px 0;width:100%;border-radius:8px;border:1px s
 <div>电流<br><span id="i" class="num">0 A</span></div>
 <div>功率<br><span id="p" class="num">0 W</span></div>
 <div>剩余容量<br><span id="ah" class="num">0 Ah</span></div>
-<div>剩余能量<br><span id="wh" class="num">0 Wh</span></div>
+<div>剩余公里数<br><span id="km" class="num">0 km</span></div>
 <div>SOC<br><span id="soc" class="num">0%</span></div>
 </div>
 </div>
@@ -98,8 +107,9 @@ async function status(){
     document.getElementById('i').textContent=s.current.toFixed(2)+' A';
     document.getElementById('p').textContent=s.power.toFixed(0)+' W';
     document.getElementById('ah').textContent=s.remainingAh.toFixed(2)+' Ah';
-    document.getElementById('wh').textContent=s.remainingWh.toFixed(0)+' Wh';
+    document.getElementById('km').textContent=s.remainingKm.toFixed(1)+' km';
     document.getElementById('soc').textContent=s.soc.toFixed(0)+'%';
+    document.getElementById('consumption').value=s.consumption.toFixed(0);
   }catch(e){}
 }
 async function scan(){
@@ -124,6 +134,7 @@ async function save(){
   let fd=new FormData();
   fd.append('mac',document.getElementById('mac').value);
   fd.append('proto',document.getElementById('proto').value);
+  fd.append('consumption',document.getElementById('consumption').value);
   let r=await api('/api/save',{method:'POST',body:fd});
   alert(r.message);
   status();
@@ -137,6 +148,16 @@ setInterval(status,1000);
 void WebConfig::begin(JkBle* ble){
   ble_=ble;
   active_=true;
+
+  // 从 Preferences 读取上次保存的单位里程耗电量。
+  Preferences p;
+  p.begin("jkcfg",true);
+  g_bmsData.energyConsumptionWhKm=p.getFloat("whkm",100.0f);
+  p.end();
+
+  if(g_bmsData.energyConsumptionWhKm<1.0f || g_bmsData.energyConsumptionWhKm>1000.0f)
+    g_bmsData.energyConsumptionWhKm=100.0f;
+
   server_.on("/",HTTP_GET,[this](){handleRoot();});
   server_.on("/api/status",HTTP_GET,[this](){handleStatus();});
   server_.on("/api/scan",HTTP_GET,[this](){handleScan();});
@@ -196,16 +217,35 @@ void WebConfig::handleSave(){
     server_.send(500,"application/json","{\"message\":\"BLE未初始化\"}");
     return;
   }
+
   String mac=server_.hasArg("mac")?server_.arg("mac"):"";
   mac.trim();
+
   bool is32=server_.hasArg("proto") ? server_.arg("proto")=="32" : true;
+
+  float whkm=server_.hasArg("consumption") ? server_.arg("consumption").toFloat() : 100.0f;
+  if(whkm<1.0f) whkm=1.0f;
+  if(whkm>1000.0f) whkm=1000.0f;
+
   ble_->setConfiguredAddress(mac);
   ble_->setProtocol32S(is32);
+
+  g_bmsData.energyConsumptionWhKm=whkm;
+
   Preferences p;
   p.begin("jkcfg",false);
   p.putBool("32s",is32);
+  p.putFloat("whkm",whkm);
   p.end();
-  server_.send(200,"application/json; charset=utf-8","{\"message\":\"参数已保存，下次开机自动使用\"}");
+
+  // 保存后立即重新计算一次，网页不用重启即可看到新结果。
+  if(g_bmsData.totalVoltage>0.1f && whkm>1.0f){
+    g_bmsData.remainingRangeKm=
+      (g_bmsData.remainingCapacityAh*g_bmsData.totalVoltage)/whkm;
+  }
+
+  server_.send(200,"application/json; charset=utf-8",
+               "{\"message\":\"参数已保存，下次开机自动使用\"}");
 }
 
 void WebConfig::handleNotFound(){
