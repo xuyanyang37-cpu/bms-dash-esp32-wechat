@@ -19,13 +19,15 @@ struct BmsData {
   uint8_t minCell=0, maxCell=0;
   float cellVoltage[JK_MAX_CELLS]={0};
   float temperature1=0, temperature2=0, mosTemperature=0;
-  float remainingCapacityAh=0, totalCapacityAh=0, balancingCurrent=0, remainingPowerWh=0;
+  float remainingCapacityAh=0, totalCapacityAh=0, balancingCurrent=0;
+  // 剩余里程 = 剩余容量(Ah) × 电压(V) ÷ 每公里耗电(Wh/km)
+  float remainingRangeKm=0;
+  float energyConsumptionWhKm=100.0f;
   bool charging=false, discharging=false, balancing=false, heating=false;
   uint32_t errors=0, updateMs=0;
 
   String mac, deviceName, softwareVersion, hardwareVersion;
 
-  // 开机连接/热点模式状态
   BmsBootState bootState=BOOT_START;
   uint8_t scanAttempt=0;
   uint8_t scanMax=3;
