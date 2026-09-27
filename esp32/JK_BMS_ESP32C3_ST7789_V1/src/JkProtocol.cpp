@@ -82,6 +82,7 @@ bool JkProtocol::parseMainFrame(const uint8_t*p,size_t n,BmsData&o){
   o.soc=p[141+off];
   o.remainingCapacityAh=u32le(p+142+off)*0.001f;
   o.totalCapacityAh=u32le(p+146+off)*0.001f;
+  o.remainingPowerWh=o.remainingCapacityAh*o.totalVoltage;
 
   o.charging=p[166+off]!=0;
   o.discharging=p[167+off]!=0;
