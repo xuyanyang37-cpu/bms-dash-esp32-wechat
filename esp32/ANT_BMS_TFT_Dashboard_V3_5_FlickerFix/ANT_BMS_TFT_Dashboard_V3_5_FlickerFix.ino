@@ -1,4 +1,7 @@
 #include <Arduino.h>
+#include <WiFi.h>
+#include <WebServer.h>
+#include <WebSocketsServer.h>
 #include "tft_setup.h"
 #include <TFT_eSPI.h>
 #include <NimBLEDevice.h>
@@ -11,6 +14,7 @@
 #include <vector>
 
 #include "ui_font_zh.h"
+#include "web_ui.h"
 
 // If the screen is mirrored, try 3 instead of 1.
 static const uint8_t TFT_ROTATION = 1;
@@ -32,7 +36,11 @@ static const uint8_t WAIT_PHONE_AFTER_NO_BMS_ROUNDS = 3;
 static const uint32_t STATE_ANIM_INTERVAL_MS = 160;
 static const size_t MAX_FRAME_SIZE = 192;
 static const char *PHONE_ADV_NAME = "BMS-DASH-SETUP";
-static const char *FIRMWARE_VERSION = "ANT_BMS_TFT_Dashboard_V3_5_FlickerFix";
+static const char *FIRMWARE_VERSION = "ANT_BMS_TFT_Dashboard_V3_5_FlickerFix_WebVue";
+static const char *WEB_AP_SSID = "BMS-DASH";
+static const char *WEB_AP_PASSWORD = "12345678";
+static const uint16_t WEB_HTTP_PORT = 80;
+static const uint16_t WEB_WS_PORT = 81;
 
 // Nordic UART style service used by the WeChat mini program.
 static const char *SETUP_SERVICE_UUID = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E";
@@ -86,6 +94,9 @@ static TFT_eSprite region = TFT_eSprite(&tft);
 static Preferences preferences;
 
 static NimBLEServer *setupServer = nullptr;
+static WebServer webServer(WEB_HTTP_PORT);
+static WebSocketsServer webSocket(WEB_WS_PORT);
+static bool webServerReady = false;
 static NimBLECharacteristic *setupTxCharacteristic = nullptr;
 static NimBLEClient *bleClient = nullptr;
 static const NimBLEAdvertisedDevice *targetAdvertisedDevice = nullptr;
@@ -511,13 +522,30 @@ static String buildStatusJson() {
   appendFloatOrNull(json, bmsData.valid ? bmsData.totalCapacityAh : NAN, 1);
   json += F(",\"remaining_capacity\":");
   appendFloatOrNull(json, bmsData.valid ? bmsData.remainingCapacityAh : NAN, 1);
-  json += '}';
+  json += F(",\"power\":");
+  appendFloatOrNull(json, bmsData.valid ? bmsData.power : NAN, 0);
+  json += F(",\"delta_cell_mv\":");
+  appendIntOrNull(json, bmsData.valid ? bmsData.deltaCellVoltageMv : -1);
+  json += F(",\"max_cell_voltage\":");
+  appendFloatOrNull(json, bmsData.valid ? bmsData.maxCellVoltage : NAN, 3);
+  json += F(",\"min_cell_voltage\":");
+  appendFloatOrNull(json, bmsData.valid ? bmsData.minCellVoltage : NAN, 3);
+  json += F(",\"rssi\":");
+  json += String(connectedRssi);
+  json += F(",\"firmware\":\"");
+  json += jsonEscape(FIRMWARE_VERSION);
+  json += F("\"}");
+  return json;
   return json;
 }
 
 static void sendSetupJson(String json) {
+  if (webServerReady) {
+    webSocket.broadcastTXT(json);
+  }
+
   if (!phoneConnected || !phoneNotifySubscribed || setupTxCharacteristic == nullptr) {
-    Serial.printf("[SETUP-TX] Skip, phone not subscribed: %s\r\n", json.c_str());
+    Serial.printf("[SETUP-TX] BLE skip, Web UI broadcasted: %s\r\n", json.c_str());
     return;
   }
 
@@ -2047,6 +2075,59 @@ static void initSetupBleService() {
   Serial.printf("[SETUP] Advertising as %s service=%s\r\n", PHONE_ADV_NAME, SETUP_SERVICE_UUID);
 }
 
+
+static void webHandleRoot() {
+  webServer.send_P(200, "text/html; charset=utf-8", WEB_INDEX_HTML);
+}
+
+static void webHandleNotFound() {
+  webServer.send(404, "text/plain; charset=utf-8", "Not Found");
+}
+
+static void webSocketEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t length) {
+  if (type == WStype_CONNECTED) {
+    IPAddress ip = webSocket.remoteIP(num);
+    Serial.printf("[WEB-WS] Client %u connected from %s\\r\\n", num, ip.toString().c_str());
+    webSocket.sendTXT(num, buildStatusJson());
+    return;
+  }
+
+  if (type == WStype_TEXT) {
+    String command;
+    command.reserve(length + 1);
+    for (size_t i = 0; i < length; i++) {
+      command += (char)payload[i];
+    }
+    Serial.printf("[WEB-WS] RX %s\\r\\n", command.c_str());
+    processPhoneCommand(command);
+    return;
+  }
+
+  if (type == WStype_DISCONNECTED) {
+    Serial.printf("[WEB-WS] Client %u disconnected\\r\\n", num);
+  }
+}
+
+static void initWebServer() {
+  WiFi.mode(WIFI_AP);
+  WiFi.softAP(WEB_AP_SSID, WEB_AP_PASSWORD);
+  delay(100);
+  webServer.on("/", HTTP_GET, webHandleRoot);
+  webServer.on("/status", HTTP_GET, []() {
+    webServer.send(200, "application/json; charset=utf-8", buildStatusJson());
+  });
+  webServer.onNotFound(webHandleNotFound);
+  webServer.begin();
+  webSocket.begin();
+  webSocket.onEvent(webSocketEvent);
+  webServerReady = true;
+
+  Serial.printf("[WEB] AP SSID=%s password=%s IP=%s HTTP=%u WS=%u\\r\\n",
+                WEB_AP_SSID, WEB_AP_PASSWORD,
+                WiFi.softAPIP().toString().c_str(),
+                WEB_HTTP_PORT, WEB_WS_PORT);
+}
+
 static void readBmsData() {
   if (!connected || !notifyReady) {
     return;
@@ -2140,6 +2221,8 @@ void setup() {
     Serial.println("[SETUP] Failed to create command queue");
   }
 
+  initWebServer();
+
   NimBLEDevice::init(PHONE_ADV_NAME);
   NimBLEDevice::setMTU(185);
   NimBLEDevice::setPower(9);
@@ -2158,6 +2241,11 @@ void setup() {
 }
 
 void loop() {
+  if (webServerReady) {
+    webServer.handleClient();
+    webSocket.loop();
+  }
+
   processPhoneCommands();
   handleReconnect();
   handleAutoRetry();
