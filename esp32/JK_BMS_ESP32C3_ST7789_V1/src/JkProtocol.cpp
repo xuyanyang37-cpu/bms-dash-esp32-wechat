@@ -30,14 +30,11 @@ bool JkProtocol::parseMainFrame(const uint8_t*p,size_t n,BmsData&o){
   int off=detectOffset(p,n);
   if(n<(size_t)(184+off)) return false;
 
-  // JK 的有效单体数量由 enabled-cells 位图决定。
-  // 32S: 位图起始 54+32；24S: 位图起始 54。
   uint32_t mask=u32le(p+54+off);
   uint8_t maxCells=protocol32S_ ? 32 : 24;
   uint8_t cells=0;
   for(uint8_t i=0;i<maxCells;i++) if(mask & (1UL<<i)) cells++;
 
-  // 某些固件位图异常时，至少保留配置型号的默认数量。
   if(cells==0) cells=maxCells;
   if(cells>JK_MAX_CELLS) cells=JK_MAX_CELLS;
 
@@ -70,8 +67,6 @@ bool JkProtocol::parseMainFrame(const uint8_t*p,size_t n,BmsData&o){
 
   o.temperature1=s16le(p+130+off)*0.1f;
   o.temperature2=s16le(p+132+off)*0.1f;
-
-  // JK02_32S 与 JK02_24S 的 MOS 温度字段位置不同。
   o.mosTemperature=s16le(p+(off?112+off:134))*0.1f;
 
   if(protocol32S_) o.errors=u32le(p+134+off);
@@ -82,7 +77,15 @@ bool JkProtocol::parseMainFrame(const uint8_t*p,size_t n,BmsData&o){
   o.soc=p[141+off];
   o.remainingCapacityAh=u32le(p+142+off)*0.001f;
   o.totalCapacityAh=u32le(p+146+off)*0.001f;
-  o.remainingPowerWh=o.remainingCapacityAh*o.totalVoltage;
+
+  // 剩余里程估算：剩余容量 × 当前电压 ÷ 单位里程能耗。
+  // 例如 100Ah × 60V ÷ 100Wh/km = 60km。
+  if(o.energyConsumptionWhKm>1.0f && o.totalVoltage>0.1f){
+    o.remainingRangeKm=(o.remainingCapacityAh*o.totalVoltage)/
+                       o.energyConsumptionWhKm;
+  }else{
+    o.remainingRangeKm=0;
+  }
 
   o.charging=p[166+off]!=0;
   o.discharging=p[167+off]!=0;
