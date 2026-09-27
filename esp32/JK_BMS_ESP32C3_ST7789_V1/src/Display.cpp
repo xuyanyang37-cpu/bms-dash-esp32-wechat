@@ -3,7 +3,7 @@
 static uint16_t lerp565(uint16_t a,uint16_t b,uint16_t t){
   uint8_t ar=(a>>11)&0x1F, ag=(a>>5)&0x3F, ab=a&0x1F;
   uint8_t br=(b>>11)&0x1F, bg=(b>>5)&0x3F, bb=b&0x1F;
-  uint8_t rr=ar+((br-ar)*t)/100, rg=ag+((bg-ag)*t)/100, rb=ab+((bb-ab)*t)/100;
+  uint8_t rr=ar+((br-ar)*t)/100, rg=ag+((gg-bg)*t)/100, rb=ab+((bb-ab)*t)/100;
   return (rr<<11)|(rg<<5)|rb;
 }
 
@@ -64,7 +64,6 @@ void Display::update(const BmsData& d){
     return;
   }
 
-  // 主仪表盘：左侧大SOC，右侧四项关键数据
   sprite_.setTextColor(TFT_GREEN,TFT_BLACK);
   sprite_.drawCentreString(String(d.soc,0)+"%",78,30,7);
   sprite_.setTextColor(TFT_WHITE,TFT_BLACK);
@@ -91,31 +90,28 @@ void Display::update(const BmsData& d){
   sprite_.drawRightString(String(d.remainingCapacityAh,1)+" Ah",315,116,4);
 
   sprite_.setTextColor(TFT_LIGHTGREY,TFT_BLACK);
-  sprite_.drawString("剩余能量",145,145,2);
-  sprite_.drawRightString(String(d.remainingPowerWh,0)+" Wh",315,145,2);
+  sprite_.drawString("剩余里程",145,145,2);
+  sprite_.drawRightString(String(d.remainingRangeKm,1)+" km",315,145,2);
 
-  // 底部功率进度条：用 16 段渐变模拟蓝→青→绿→黄→红
-  float ratio=0;
-  if(d.totalCapacityAh>0 && d.totalVoltage>0){
-    ratio=d.remainingPowerWh/(d.totalCapacityAh*d.totalVoltage);
-  } else {
-    ratio=d.soc/100.0f;
-  }
+  // 底部显示剩余里程/剩余电量的进度条。
+  // 这里使用 SOC 作为最稳定的电量百分比基准。
+  float ratio=d.soc/100.0f;
   if(ratio<0) ratio=0;
   if(ratio>1) ratio=1;
 
   const int x=8,y=162,w=304,h=6;
   for(int i=0;i<16;i++){
     float p0=i/16.0f;
-    float p1=(i+1)/16.0f;
     uint16_t color;
-    if(p0<0.5f) color=lerp565(TFT_RED,TFT_YELLOW,(uint16_t)(p0*200));
-    else color=lerp565(TFT_YELLOW,TFT_GREEN,(uint16_t)((p0-0.5f)*200));
+    if(p0<0.25f) color=lerp565(TFT_RED,TFT_ORANGE,(uint16_t)(p0*400));
+    else if(p0<0.5f) color=lerp565(TFT_ORANGE,TFT_YELLOW,(uint16_t)((p0-0.25f)*400));
+    else if(p0<0.75f) color=lerp565(TFT_YELLOW,TFT_GREEN,(uint16_t)((p0-0.5f)*400));
+    else color=lerp565(TFT_GREEN,TFT_CYAN,(uint16_t)((p0-0.75f)*400));
     int sx=x+(w*i)/16;
     int sw=(w*(i+1))/16-(w*i)/16;
-    sprite_.fillRect(sx,y,sw,h,color);
+    if((i+1)/16.0f<=ratio) sprite_.fillRect(sx,y,sw,h,color);
+    else sprite_.drawRect(sx,y,sw,h,TFT_DARKGREY);
   }
-  sprite_.fillRect(x,y,(int)(w*ratio),h,TFT_WHITE);
 
   sprite_.pushSprite(0,0);
 }
