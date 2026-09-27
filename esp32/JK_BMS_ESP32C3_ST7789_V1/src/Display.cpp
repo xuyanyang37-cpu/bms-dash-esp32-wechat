@@ -43,9 +43,9 @@ namespace {
     uint8_t bg = (b >> 5)  & 0x3F;
     uint8_t bb = b & 0x1F;
 
-    uint8_t rr = ar + ((int16_t)(br - ar) * percent) / 100;
-    uint8_t rg = ag + ((int16_t)(bg - ag) * percent) / 100;
-    uint8_t rb = ab + ((int16_t)(bb - ab) * percent) / 100;
+    uint8_t rr = ar + (((int16_t)br - (int16_t)ar) * percent) / 100;
+    uint8_t rg = ag + (((int16_t)bg - (int16_t)ag) * percent) / 100;
+    uint8_t rb = ab + (((int16_t)bb - (int16_t)ab) * percent) / 100;
 
     return ((uint16_t)rr << 11) | ((uint16_t)rg << 5) | rb;
   }
