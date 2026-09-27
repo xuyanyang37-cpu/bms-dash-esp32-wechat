@@ -24,16 +24,19 @@ void Display::begin() {
 
   statusSprite_.setColorDepth(16);
   socSprite_.setColorDepth(16);
+  leftInfoSprite_.setColorDepth(16);
   rowSprite_.setColorDepth(16);
   barSprite_.setColorDepth(16);
 
   statusSprite_.createSprite(320, 22);
   socSprite_.createSprite(140, 65);
+  leftInfoSprite_.createSprite(140, 30);
   rowSprite_.createSprite(175, 28);
   barSprite_.createSprite(304, 8);
 
   statusSprite_.fillSprite(TFT_BLACK);
   socSprite_.fillSprite(TFT_BLACK);
+  leftInfoSprite_.fillSprite(TFT_BLACK);
   rowSprite_.fillSprite(TFT_BLACK);
   barSprite_.fillSprite(TFT_BLACK);
 
@@ -221,7 +224,7 @@ void Display::drawSoc(const BmsData& d) {
   socSprite_.pushSprite(0,21);
 }
 
-void Display::clearRow() {
+void Display::drawTemperature(const BmsData& d) {\n  leftInfoSprite_.fillSprite(TFT_BLACK);\n  FontGB2312::drawText(leftInfoSprite_,0,1,"容量",TFT_CYAN,TFT_BLACK,1);\n  leftInfoSprite_.drawRightString(String(d.remainingCapacityAh,1)+"Ah",66,0,2);\n  FontGB2312::drawText(leftInfoSprite_,72,1,"温度",TFT_YELLOW,TFT_BLACK,1);\n  leftInfoSprite_.drawRightString(String(d.temperature1,1)+"C",139,0,2);\n  leftInfoSprite_.pushSprite(0,89);\n}\n\nvoid Display::clearRow() {
   rowSprite_.fillSprite(TFT_BLACK);
 }
 
