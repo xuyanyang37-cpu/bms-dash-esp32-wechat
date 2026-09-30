@@ -5,33 +5,22 @@
 /*
  * JK BMS + ST7789 1.9" / 320x170
  * UI 2.0 - 按设计图重新做像素级布局。
- *
- * 主界面：
- *   左：SOC
- *   左下：温度 / 单体压差 + 剩余容量
- *   右：电压 / 电流 / 功率 / 剩余里程
- *   底：SOC 渐变条
- *
- * 主界面只显示电池运行数据，不显示连接状态文字。
  */
 
 namespace {
-  // 设计图的深蓝色圆角卡片。
   static const uint16_t UI_PANEL      = 0x0948;
   static const uint16_t UI_PANEL_DARK = 0x0127;
 
   static const uint16_t UI_WHITE   = TFT_WHITE;
-  static const uint16_t UI_VOLTAGE = 0xFFE0; // 明黄色
-  static const uint16_t UI_CURRENT = 0x07E0; // 亮绿色
-  static const uint16_t UI_POWER   = 0xFCA8; // 柔和红色
-  static const uint16_t UI_RANGE   = 0x2F3C; // 青色
+  static const uint16_t UI_VOLTAGE = 0xFFE0;
+  static const uint16_t UI_CURRENT = 0x07E0;
+  static const uint16_t UI_POWER   = 0xFCA8;
+  static const uint16_t UI_RANGE   = 0x2F3C;
   static const uint16_t UI_TEMP    = 0x07E0;
 
-  // 设计图：低电量可调颜色阈值。
   static const float SOC_WARN_THRESHOLD = 30.0f;
   static const float SOC_CRITICAL_THRESHOLD = 15.0f;
 
-  // 16bit RGB565 颜色线性插值。
   static uint16_t lerp565(uint16_t a, uint16_t b, uint16_t percent) {
     if (percent > 100) percent = 100;
 
@@ -87,18 +76,19 @@ bool Display::changed(float a, float b, float eps) const {
 }
 
 void Display::begin() {
-  // ST7789 初始化期间保持背光关闭，避免初始化过程中的白屏/闪屏。
+  /*
+   * 这里恢复原来已经验证可以正常显示的上电顺序：
+   * GPIO5 必须先为 HIGH，再初始化 ST7789。
+   *
+   * 上一个修复版把背光保持 LOW 到 tft.init() 完成后，
+   * 在你的这块屏上会导致 LCD 不正常启动。
+   */
   pinMode(TFT_BL, OUTPUT);
-  digitalWrite(TFT_BL, LOW);
+  digitalWrite(TFT_BL, HIGH);
 
-  // 初始化 ST7789 控制器。
   tft_.init();
   tft_.setRotation(1);
-
-  // 控制器初始化完成后先清黑屏，再开启背光。
   tft_.fillScreen(TFT_BLACK);
-  delay(30);
-  digitalWrite(TFT_BL, HIGH);
 
   socSprite_.setColorDepth(16);
   leftInfoSprite_.setColorDepth(16);
@@ -158,8 +148,7 @@ void Display::drawFullPage(const BmsData& d) {
     page.createSprite(320, 170);
     page.fillSprite(TFT_BLACK);
 
-    FontGB2312::drawCenterString(page, 160, 7,
-                                 "连接电池",
+    FontGB2312::drawCenterString(page, 160, 7, "连接电池",
                                  TFT_CYAN, TFT_BLACK, 2);
     FontGB2312::drawCenterString(
         page, 160, 43,
@@ -196,8 +185,7 @@ void Display::drawFullPage(const BmsData& d) {
     page.createSprite(320, 170);
     page.fillSprite(TFT_BLACK);
 
-    FontGB2312::drawCenterString(page, 160, 8,
-                                 "正在连接",
+    FontGB2312::drawCenterString(page, 160, 8, "正在连接",
                                  TFT_YELLOW, TFT_BLACK, 2);
     FontGB2312::drawCenterString(page, 160, 50,
                                  d.mac.length() ? d.mac : "JK-BMS",
@@ -211,15 +199,13 @@ void Display::drawFullPage(const BmsData& d) {
     return;
   }
 
-  if ((d.bootState == BOOT_HOTSPOT || d.hotspot) &&
-      !d.online) {
+  if ((d.bootState == BOOT_HOTSPOT || d.hotspot) && !d.online) {
     TFT_eSprite page(&tft_);
     page.setColorDepth(16);
     page.createSprite(320, 170);
     page.fillSprite(TFT_BLACK);
 
-    FontGB2312::drawCenterString(page, 160, 5,
-                                 "热点设置",
+    FontGB2312::drawCenterString(page, 160, 5, "热点设置",
                                  TFT_YELLOW, TFT_BLACK, 2);
     FontGB2312::drawCenterString(page, 160, 43,
                                  "WiFi: JK-BMS-SETUP",
@@ -325,22 +311,19 @@ void Display::drawTemperature(const BmsData& d) {
 
 void Display::drawVoltage(const BmsData& d) {
   drawMetricRow(rowSprite_, 'V', "电压",
-                String(d.totalVoltage, 2) + "V",
-                UI_VOLTAGE);
+                String(d.totalVoltage, 2) + "V", UI_VOLTAGE);
   rowSprite_.pushSprite(148, 4);
 }
 
 void Display::drawCurrent(const BmsData& d) {
   drawMetricRow(rowSprite_, 'A', "电流",
-                String(d.current, 1) + "A",
-                UI_CURRENT);
+                String(d.current, 1) + "A", UI_CURRENT);
   rowSprite_.pushSprite(148, 33);
 }
 
 void Display::drawPower(const BmsData& d) {
   drawMetricRow(rowSprite_, 'W', "功率",
-                String(d.power, 0) + "W",
-                UI_POWER);
+                String(d.power, 0) + "W", UI_POWER);
   rowSprite_.pushSprite(148, 62);
 }
 
@@ -349,13 +332,11 @@ void Display::drawRange(const BmsData& d) {
   rowSprite_.fillRoundRect(0, 0, 168, 27, 7, UI_PANEL);
 
   FontGB2312::drawText(rowSprite_, 8, 5,
-                       "剩余里程",
-                       UI_RANGE, UI_PANEL, 1);
+                       "剩余里程", UI_RANGE, UI_PANEL, 1);
 
   rowSprite_.setTextColor(UI_RANGE, UI_PANEL);
   rowSprite_.drawRightString(
-      String(d.remainingRangeKm, 0) + " KM",
-      164, 5, 2);
+      String(d.remainingRangeKm, 0) + " KM", 164, 5, 2);
 
   rowSprite_.pushSprite(148, 91);
 }
@@ -378,19 +359,13 @@ void Display::drawSocBar(const BmsData& d) {
     }
 
     uint16_t color;
+    uint16_t p = (uint16_t)((x * 100L) / (w - 1));
 
-    if (w <= 1) {
-      color = TFT_GREEN;
+    if (p <= 50) {
+      color = lerp565(TFT_GREEN, TFT_YELLOW, (uint16_t)(p * 2));
     } else {
-      uint16_t p = (uint16_t)((x * 100L) / (w - 1));
-
-      if (p <= 50) {
-        color = lerp565(TFT_GREEN, TFT_YELLOW,
-                        (uint16_t)(p * 2));
-      } else {
-        color = lerp565(TFT_YELLOW, TFT_RED,
-                        (uint16_t)((p - 50) * 2));
-      }
+      color = lerp565(TFT_YELLOW, TFT_RED,
+                      (uint16_t)((p - 50) * 2));
     }
 
     barSprite_.drawFastVLine(x, 0, h, color);
