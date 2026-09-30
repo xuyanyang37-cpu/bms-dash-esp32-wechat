@@ -62,14 +62,6 @@ namespace {
     sprite.fillRoundRect(x, y, w, h, 7, UI_PANEL);
   }
 
-  /*
-   * 右侧数据卡片：
-   * 168 x 27 px
-   * 圆角 7 px
-   * 图标圆直径约 24 px
-   * 中文 16 px
-   * 数值 16 px
-   */
   static void drawMetricRow(TFT_eSprite& sprite,
                             char icon,
                             const char* label,
@@ -78,16 +70,13 @@ namespace {
     sprite.fillSprite(TFT_BLACK);
     sprite.fillRoundRect(0, 0, 168, 27, 7, UI_PANEL);
 
-    // 图标圆：24 px，字母使用 Font 2，避免 Font 4 超出圆形。
     sprite.drawCircle(15, 13, 11, color);
     sprite.setTextColor(color, UI_PANEL);
     sprite.drawCentreString(String(icon), 15, 5, 2);
 
-    // 中文 16x16 点阵，与设计图的数据标签高度一致。
     FontGB2312::drawText(sprite, 31, 5,
                          String(label), color, UI_PANEL, 1);
 
-    // 右对齐数值，避免电流/功率变长时挤压中文。
     sprite.setTextColor(color, UI_PANEL);
     sprite.drawRightString(value, 164, 5, 2);
   }
@@ -98,24 +87,27 @@ bool Display::changed(float a, float b, float eps) const {
 }
 
 void Display::begin() {
+  // ST7789 初始化期间保持背光关闭，避免初始化过程中的白屏/闪屏。
   pinMode(TFT_BL, OUTPUT);
-  digitalWrite(TFT_BL, HIGH);
+  digitalWrite(TFT_BL, LOW);
 
+  // 初始化 ST7789 控制器。
   tft_.init();
   tft_.setRotation(1);
+
+  // 控制器初始化完成后先清黑屏，再开启背光。
   tft_.fillScreen(TFT_BLACK);
+  delay(30);
+  digitalWrite(TFT_BL, HIGH);
 
   socSprite_.setColorDepth(16);
   leftInfoSprite_.setColorDepth(16);
   rowSprite_.setColorDepth(16);
   barSprite_.setColorDepth(16);
 
-  // 与设计图的比例对应。
   socSprite_.createSprite(140, 78);
   leftInfoSprite_.createSprite(140, 67);
   rowSprite_.createSprite(168, 27);
-
-  // 底部渐变条横跨左右两个区域。
   barSprite_.createSprite(312, 11);
 
   socSprite_.fillSprite(TFT_BLACK);
@@ -265,7 +257,6 @@ void Display::drawDashboard(const BmsData& d, bool force) {
     return;
   }
 
-  // SOC 变化：数字 + 底部渐变条同时刷新。
   if (changed(d.soc, lastData_.soc, 0.5f)) {
     drawSoc(d);
     drawSocBar(d);
@@ -296,19 +287,14 @@ void Display::drawDashboard(const BmsData& d, bool force) {
 
 void Display::drawSoc(const BmsData& d) {
   socSprite_.fillSprite(TFT_BLACK);
-
-  // 4,4 -> 144,82；与左下区域保持 2 px 间距。
   drawPanel(socSprite_, 0, 0, 140, 78);
 
   String value = String(d.soc, 0);
   uint16_t color = socColor(d.soc);
 
-  // Font 7 是 TFT_eSPI 原生 48 px 七段数字，专门支持数字。
-  // 设计图的大 SOC 数字采用这一字体最接近。
   socSprite_.setTextColor(color, UI_PANEL);
   socSprite_.drawCentreString(value, 70, -1, 7);
 
-  // % 小号、右下角。
   socSprite_.setTextColor(color, UI_PANEL);
   socSprite_.drawString("%", 108, 47, 4);
 
@@ -317,19 +303,15 @@ void Display::drawSoc(const BmsData& d) {
 
 void Display::drawTemperature(const BmsData& d) {
   leftInfoSprite_.fillSprite(TFT_BLACK);
-
-  // 左卡片：73 x 67。
   leftInfoSprite_.fillRoundRect(0, 0, 73, 67, 7, UI_PANEL);
 
   String temp = String(d.temperature1, 1) + "C";
   String delta = String(d.deltaCellVoltage * 1000.0f, 0) + "mV";
 
-  // 16 px 字体，两行，和设计图的信息密度一致。
   leftInfoSprite_.setTextColor(UI_TEMP, UI_PANEL);
   leftInfoSprite_.drawString(temp, 4, 3, 2);
   leftInfoSprite_.drawString(delta, 4, 31, 2);
 
-  // 右卡片：65 x 67。
   leftInfoSprite_.fillRoundRect(75, 0, 65, 67, 7, UI_PANEL);
 
   leftInfoSprite_.setTextColor(UI_WHITE, UI_PANEL);
@@ -387,11 +369,6 @@ void Display::drawSocBar(const BmsData& d) {
 
   const int16_t w = 312;
   const int16_t h = 11;
-
-  /*
-   * 设计图是连续绿 -> 黄 -> 红渐变。
-   * 按像素计算，而不是 32 段，避免在小屏上看到明显色块。
-   */
   int filled = (int)(w * ratio + 0.5f);
 
   for (int16_t x = 0; x < w; ++x) {
@@ -419,8 +396,6 @@ void Display::drawSocBar(const BmsData& d) {
     barSprite_.drawFastVLine(x, 0, h, color);
   }
 
-  // 细边框 + 3 px 圆角，保持设计图的胶囊形效果。
   barSprite_.drawRoundRect(0, 0, w, h, 3, TFT_DARKGREY);
-
   barSprite_.pushSprite(4, 157);
 }
