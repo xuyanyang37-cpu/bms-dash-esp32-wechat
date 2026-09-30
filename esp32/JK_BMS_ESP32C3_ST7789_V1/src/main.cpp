@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <HardwareSerial.h>
 #include <WiFi.h>
 #include "../tft_setup.h"
 #include "BmsData.h"
@@ -24,18 +25,22 @@ static void startHotspot(){
   g_bmsData.statusMessage="等待网页设置";
   webConfig.begin(&jk);
 
-  Serial.print("热点SSID: ");
-  Serial.println(AP_SSID);
-  Serial.print("热点IP: ");
-  Serial.println(ip);
+// Serial.print("热点SSID: ");
+  //Serial.println(AP_SSID);
+  //Serial.print("热点IP: ");
+// Serial.println(ip);
 }
 
 void setup(){
-  Serial.begin(115200);
-  delay(500);
+  // 背光脚必须在最早阶段明确拉低，避免 GPIO5 上电悬空导致背光闪烁。
+  pinMode(TFT_BL, OUTPUT);
+  digitalWrite(TFT_BL, LOW);
 
-  Serial.println("ESP32-C3 JK BMS + ST7789 UI 2.0");
-  Serial.println("BL=5 CS=3 DC=2 RES=10 SDA=7 SCL=6");
+  // 等待电源/IO 稳定后再初始化 ST7789。
+  delay(20);
+
+  //Serial.println("ESP32-C3 JK BMS + ST7789 UI 2.0");
+  //Serial.println("BL=5 CS=3 DC=2 RES=10 SDA=7 SCL=6");
 
   display.begin();
   jk.begin();
