@@ -27,7 +27,11 @@ static void startHotspot(){
 }
 
 void setup(){
-  delay(500);
+  // 最先锁定背光为常亮，后续程序绝不再切换 GPIO5。
+  pinMode(TFT_BL, OUTPUT);
+  digitalWrite(TFT_BL, HIGH);
+
+  delay(100);
 
   display.begin();
   jk.begin();
