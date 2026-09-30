@@ -76,13 +76,7 @@ bool Display::changed(float a, float b, float eps) const {
 }
 
 void Display::begin() {
-  /*
-   * 这里恢复原来已经验证可以正常显示的上电顺序：
-   * GPIO5 必须先为 HIGH，再初始化 ST7789。
-   *
-   * 上一个修复版把背光保持 LOW 到 tft.init() 完成后，
-   * 在你的这块屏上会导致 LCD 不正常启动。
-   */
+  // 背光只在这里打开一次；后续刷新绝不再次操作 GPIO5。
   pinMode(TFT_BL, OUTPUT);
   digitalWrite(TFT_BL, HIGH);
 
@@ -107,6 +101,8 @@ void Display::begin() {
 
   initialized_ = true;
   firstDashboard_ = true;
+
+  // 开机画面只绘制一次，不创建 320x170 大 Sprite。
   drawFullPage(g_bmsData);
 }
 
@@ -138,97 +134,71 @@ void Display::update(const BmsData& d) {
 }
 
 void Display::drawFullPage(const BmsData& d) {
+  // 只有状态切换时才整屏清一次；正常数据更新绝不整屏刷新。
   tft_.fillScreen(TFT_BLACK);
   firstDashboard_ = (d.online || d.bootState == BOOT_CONNECTED);
 
-  if (d.bootState == BOOT_SCANNING ||
-      d.bootState == BOOT_START) {
-    TFT_eSprite page(&tft_);
-    page.setColorDepth(16);
-    page.createSprite(320, 170);
-    page.fillSprite(TFT_BLACK);
-
-    FontGB2312::drawCenterString(page, 160, 7, "连接电池",
+  if (d.bootState == BOOT_SCANNING || d.bootState == BOOT_START) {
+    FontGB2312::drawCenterString(tft_, 160, 7, "连接电池",
                                  TFT_CYAN, TFT_BLACK, 2);
     FontGB2312::drawCenterString(
-        page, 160, 43,
+        tft_, 160, 43,
         d.statusMessage.length() ? d.statusMessage : "扫描蓝牙...",
         TFT_WHITE, TFT_BLACK, 1);
 
     int w = 250;
-    page.drawRoundRect(35, 72, w, 18, 5, TFT_DARKGREY);
+    tft_.drawRoundRect(35, 72, w, 18, 5, TFT_DARKGREY);
 
     int progress = (d.scanAttempt * 100) / 3;
     if (progress > 100) progress = 100;
-
     if (progress > 0) {
-      page.fillRoundRect(38, 75,
+      tft_.fillRoundRect(38, 75,
                          (w - 6) * progress / 100,
                          12, 4, TFT_BLUE);
     }
 
-    FontGB2312::drawCenterString(page, 160, 96,
+    FontGB2312::drawCenterString(tft_, 160, 96,
                                  String(d.scanAttempt) + "/3",
                                  TFT_YELLOW, TFT_BLACK, 1);
-    FontGB2312::drawCenterString(page, 160, 135,
+    FontGB2312::drawCenterString(tft_, 160, 135,
                                  "自动扫描并连接JK保护板",
                                  TFT_LIGHTGREY, TFT_BLACK, 1);
-
-    page.pushSprite(0, 0);
-    page.deleteSprite();
     return;
   }
 
   if (d.bootState == BOOT_CONNECTING) {
-    TFT_eSprite page(&tft_);
-    page.setColorDepth(16);
-    page.createSprite(320, 170);
-    page.fillSprite(TFT_BLACK);
-
-    FontGB2312::drawCenterString(page, 160, 8, "正在连接",
+    FontGB2312::drawCenterString(tft_, 160, 8, "正在连接",
                                  TFT_YELLOW, TFT_BLACK, 2);
-    FontGB2312::drawCenterString(page, 160, 50,
+    FontGB2312::drawCenterString(tft_, 160, 50,
                                  d.mac.length() ? d.mac : "JK-BMS",
                                  TFT_WHITE, TFT_BLACK, 1);
-    FontGB2312::drawCenterString(page, 160, 82,
+    FontGB2312::drawCenterString(tft_, 160, 82,
                                  "正在建立蓝牙连接...",
                                  TFT_WHITE, TFT_BLACK, 1);
-
-    page.pushSprite(0, 0);
-    page.deleteSprite();
     return;
   }
 
   if ((d.bootState == BOOT_HOTSPOT || d.hotspot) && !d.online) {
-    TFT_eSprite page(&tft_);
-    page.setColorDepth(16);
-    page.createSprite(320, 170);
-    page.fillSprite(TFT_BLACK);
-
-    FontGB2312::drawCenterString(page, 160, 5, "热点设置",
+    FontGB2312::drawCenterString(tft_, 160, 5, "热点设置",
                                  TFT_YELLOW, TFT_BLACK, 2);
-    FontGB2312::drawCenterString(page, 160, 43,
+    FontGB2312::drawCenterString(tft_, 160, 43,
                                  "WiFi: JK-BMS-SETUP",
                                  TFT_WHITE, TFT_BLACK, 1);
-    FontGB2312::drawCenterString(page, 160, 70,
+    FontGB2312::drawCenterString(tft_, 160, 70,
                                  "手机连接后打开网页",
                                  TFT_CYAN, TFT_BLACK, 1);
     FontGB2312::drawCenterString(
-        page, 160, 94,
+        tft_, 160, 94,
         d.hotspotIp.length() ? d.hotspotIp : "192.168.4.1",
         TFT_CYAN, TFT_BLACK, 1);
-    FontGB2312::drawCenterString(page, 160, 130,
+    FontGB2312::drawCenterString(tft_, 160, 130,
                                  "扫描 / 选择 / 连接电池",
                                  TFT_LIGHTGREY, TFT_BLACK, 1);
-
-    page.pushSprite(0, 0);
-    page.deleteSprite();
     return;
   }
 
   drawDashboard(d, true);
 }
-
 void Display::drawDashboard(const BmsData& d, bool force) {
   if (force) {
     tft_.fillScreen(TFT_BLACK);
