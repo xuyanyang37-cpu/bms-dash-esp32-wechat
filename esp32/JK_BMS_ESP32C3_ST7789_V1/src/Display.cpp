@@ -109,8 +109,23 @@ void Display::begin() {
 void Display::update(const BmsData& d) {
   if (!initialized_) return;
 
-  if (d.bootState != lastBootState_ ||
-      d.hotspot != lastData_.hotspot) {
+  // AP热点模式只绘制一次，避免WiFi/WebServer运行后反复刷新LCD。
+  // 同时使用TFT_eSPI内置英文字体，避免热点模式再次调用中文字库。
+  if (d.hotspot || d.bootState == BOOT_HOTSPOT) {
+    if (!hotspotShown_) {
+      drawHotspotPage(d);
+      hotspotShown_ = true;
+      Serial.printf("[DISPLAY] HOTSPOT PAGE, heap=%u\\n",
+                    ESP.getFreeHeap());
+    }
+    lastBootState_ = d.bootState;
+    lastData_ = d;
+    return;
+  }
+
+  hotspotShown_ = false;
+
+  if (d.bootState != lastBootState_) {
     drawFullPage(d);
     lastBootState_ = d.bootState;
     lastData_ = d;
@@ -132,6 +147,26 @@ void Display::update(const BmsData& d) {
   firstDashboard_ = false;
   lastData_ = d;
 }
+
+void Display::drawHotspotPage(const BmsData& d) {
+  tft_.fillScreen(TFT_BLACK);
+
+  tft_.setTextColor(TFT_YELLOW, TFT_BLACK);
+  tft_.drawCentreString("WIFI SETUP", 160, 8, 4);
+
+  tft_.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft_.drawCentreString("SSID: JK-BMS-SETUP", 160, 48, 2);
+  tft_.drawCentreString("PASS: 12345678", 160, 72, 2);
+
+  tft_.setTextColor(TFT_CYAN, TFT_BLACK);
+  tft_.drawCentreString(
+      d.hotspotIp.length() ? d.hotspotIp : "192.168.4.1",
+      160, 101, 4);
+
+  tft_.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+  tft_.drawCentreString("Connect WiFi, open browser", 160, 140, 2);
+}
+
 
 void Display::drawFullPage(const BmsData& d) {
   // 只有状态切换时才整屏清一次；正常数据更新绝不整屏刷新。
