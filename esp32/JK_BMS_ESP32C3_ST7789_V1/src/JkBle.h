@@ -3,7 +3,7 @@
 #include <Arduino.h>
 #include <NimBLEDevice.h>
 #include "BmsData.h"
-#include "JkProtocol.h"
+#include "BmsProtocolManager.h"
 
 #define JK_SCAN_RESULT_MAX 8
 
@@ -23,29 +23,31 @@ public:
   uint8_t scanDevices(uint32_t seconds=5);
   bool connectDeviceByIndex(uint8_t index);
   bool connected() const;
-  // 进入热点配网前释放当前 GATT Client，避免 BLE Client 与 WiFi AP 同时占用堆内存。
   void releaseConnectionForHotspot();
   void loop();
 
   uint8_t getScanCount() const { return scanCount_; }
   const JkScanItem& getScanItem(uint8_t i) const { return scanItems_[i]; }
   const String& getConfiguredAddress() const { return configuredAddress_; }
-  void setConfiguredAddress(const String& mac);
+  uint8_t getConfiguredAddressType() const { return configuredAddressType_; }
+  void setConfiguredAddress(const String& mac, uint8_t addressType=BLE_ADDR_PUBLIC);
   uint8_t getScanAttempt() const { return scanAttempt_; }
-  void setProtocol32S(bool enable){ protocol32S_=enable; protocol_.setProtocol32S(enable); }
-  bool isProtocol32S() const { return protocol32S_; }
+  void setProtocol32S(bool enable){protocol32S_=enable; protocolManager_.setProtocol32S(enable);}
+  bool isProtocol32S() const {return protocol32S_;}
+  const char* protocolName() const { return protocolManager_.protocolName(); }
 
 private:
   NimBLEClient* client_;
   NimBLERemoteCharacteristic* ch_;
   NimBLERemoteCharacteristic* writeCh_;
   NimBLERemoteCharacteristic* notifyCh_;
-  JkProtocol protocol_;
+  BmsProtocolManager protocolManager_;
   uint8_t counter_;
   uint32_t lastRequest_;
   uint32_t lastReconnectAttempt_;
   uint8_t scanCount_;
   uint8_t scanAttempt_;
+  uint8_t configuredAddressType_;
   bool protocol32S_;
   String configuredAddress_;
   JkScanItem scanItems_[JK_SCAN_RESULT_MAX];
@@ -57,4 +59,5 @@ private:
   bool isCandidate(const NimBLEAdvertisedDevice*) const;
   void setStatus(BmsBootState state, const String& message);
 };
+
 #endif
