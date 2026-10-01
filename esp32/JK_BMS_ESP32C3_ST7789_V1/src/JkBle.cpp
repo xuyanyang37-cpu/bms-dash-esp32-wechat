@@ -378,3 +378,27 @@ void JkBle::loop(){
 bool JkBle::connected() const{
   return client_ && client_->isConnected();
 }
+
+void JkBle::releaseConnectionForHotspot(){
+  // 连接失败但 GATT 已建立时，client_ 仍然可能保持连接。
+  // 如果此时直接启动 WiFi AP，会让 BLE + WiFi 同时抢占 C3 堆内存，
+  // 可能表现为“进入配网瞬间重启”。进入热点前必须彻底释放 Client。
+  if(client_){
+    if(client_->isConnected())
+      client_->disconnect();
+    NimBLEDevice::deleteClient(client_);
+    client_=nullptr;
+  }
+
+  ch_=nullptr;
+  writeCh_=nullptr;
+  notifyCh_=nullptr;
+  g_bmsData.online=false;
+  g_bmsData.valid=false;
+
+  NimBLEScan* s=NimBLEDevice::getScan();
+  if(s){
+    s->stop();
+    s->clearResults();
+  }
+}
