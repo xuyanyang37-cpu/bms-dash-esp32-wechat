@@ -81,7 +81,21 @@ uint8_t JkBle::scanDevices(uint32_t sec){
 }
 
 bool JkBle::scanAndConnect(uint32_t sec, uint8_t attemptOverride){
-  if(connected()) return true;
+  // 只有“BLE 已连接 + 已收到有效 JK 数据”才算真正连接成功。
+  // 如果上一次只建立了 GATT 连接但没有有效协议数据，
+  // 先释放旧 Client，再重新扫描，避免后续重试一直复用错误连接。
+  if(connected() && g_bmsData.valid) return true;
+
+  if(connected()){
+    client_->disconnect();
+    NimBLEDevice::deleteClient(client_);
+    client_=nullptr;
+    ch_=nullptr;
+    writeCh_=nullptr;
+    notifyCh_=nullptr;
+    g_bmsData.online=false;
+    g_bmsData.valid=false;
+  }
 
   // attemptOverride 用于开机阶段：
   // main.cpp 会先把“1/3、2/3、3/3”画到屏幕，再进入阻塞式BLE扫描。
