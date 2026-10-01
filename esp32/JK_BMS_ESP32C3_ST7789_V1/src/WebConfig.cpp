@@ -23,8 +23,9 @@ String WebConfig::makeStatusJson(){
   j+="\"online\":"+String(g_bmsData.online?"true":"false");
   j+=",\"state\":"+String((int)g_bmsData.bootState);
   j+=",\"message\":\""+jsonEscape(g_bmsData.statusMessage)+"\"";
-  j+=",\"mac\":\""+jsonEscape(g_bmsData.mac)+"\"";
+  j+=",\"mac\":\""+jsonEscape(g_bmsData.mac.length()?g_bmsData.mac:ble_?ble_->getConfiguredAddress():"")+"\"";
   j+=",\"name\":\""+jsonEscape(g_bmsData.deviceName)+"\"";
+  j+=",\"proto\":"+String(ble_ && ble_->isProtocol32S()?"32":"24");
   j+=",\"ip\":\""+jsonEscape(WiFi.softAPIP().toString())+"\"";
   j+=",\"scanCount\":"+String(ble_?ble_->getScanCount():0);
   j+=",\"scanAttempt\":"+String(g_bmsData.scanAttempt);
@@ -105,6 +106,9 @@ async function status(){
     document.getElementById('status').innerHTML=
       '<b class="'+(s.online?'ok':'warn')+'">'+(s.online?'已连接':'未连接')+
       '</b>　'+s.message+'<br>MAC: '+(s.mac||'未设置')+'　IP: '+s.ip;
+    // 连接成功后，把实际连接的蓝牙地址自动回填到 MAC 输入框。
+    if(s.mac) document.getElementById('mac').value=s.mac;
+    if(s.proto) document.getElementById('proto').value=s.proto;
     document.getElementById('v').textContent=s.voltage.toFixed(2)+' V';
     document.getElementById('i').textContent=s.current.toFixed(2)+' A';
     document.getElementById('p').textContent=s.power.toFixed(0)+' W';
@@ -130,6 +134,7 @@ async function connectTo(i){
   document.getElementById('status').textContent='正在连接选中的蓝牙电池...';
   let r=await api('/api/connect?index='+i);
   document.getElementById('status').textContent=r.message;
+  if(r.mac) document.getElementById('mac').value=r.mac;
   status();
 }
 async function save(){
