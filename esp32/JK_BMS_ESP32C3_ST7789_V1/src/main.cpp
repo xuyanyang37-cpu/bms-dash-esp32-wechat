@@ -51,6 +51,12 @@ void setup(){
     display.begin();
     display.update(g_bmsData);
     delay(100);
+
+    // 重要：如果是“重启后直接进入配网”路径，前面没有执行 jk.begin()。
+    // 网页端扫描/连接会调用 NimBLE，因此这里必须先初始化 BLE。
+    // 只初始化一次，不重复创建 Client。
+    jk.begin();
+
     startHotspot();
     display.update(g_bmsData);
     return;
