@@ -7,7 +7,7 @@ static const char* WRITE_CHAR="FFE1";
 static const char* NOTIFY_CHAR="FFE2";
 BmsBle* BmsBle::instance_=nullptr;
 
-BmsBle::JkBle()
+BmsBle::BmsBle()
   : client_(nullptr),ch_(nullptr),writeCh_(nullptr),notifyCh_(nullptr),
     counter_(0),lastRequest_(0),lastReconnectAttempt_(0),
     scanCount_(0),scanAttempt_(0),configuredAddressType_(BLE_ADDR_PUBLIC),
