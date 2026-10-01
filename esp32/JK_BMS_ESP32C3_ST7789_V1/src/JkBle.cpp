@@ -291,8 +291,14 @@ void JkBle::loop(){
     if(g_bmsData.bootState!=BOOT_HOTSPOT &&
        millis()-lastReconnectAttempt_>=15000){
       lastReconnectAttempt_=millis();
-      scanAttempt_=0;
-      if(!scanAndConnect(3))
+
+      // 自动重连不能重新进入“1/3、2/3、3/3”的开机流程。
+      // 保持当前扫描次数，避免失败后屏幕又回到 1/3。
+      uint8_t reconnectAttempt = scanAttempt_;
+      if(reconnectAttempt < 1 || reconnectAttempt > 3)
+        reconnectAttempt = 1;
+
+      if(!scanAndConnect(3, reconnectAttempt))
         g_bmsData.online=false;
     }
     return;
