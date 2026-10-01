@@ -3,7 +3,8 @@
 #include <string.h>
 
 static const char* SERVICE="FFE0";
-static const char* CHAR="FFE1";
+static const char* WRITE_CHAR="FFE1";
+static const char* NOTIFY_CHAR="FFE2";
 JkBle* JkBle::instance_=nullptr;
 
 JkBle::JkBle():client_(nullptr),ch_(nullptr),writeCh_(nullptr),notifyCh_(nullptr),counter_(0),lastRequest_(0),lastReconnectAttempt_(0),
@@ -129,43 +130,65 @@ bool JkBle::connectByAddress(const String& address){
     return false;
   }
 
-  NimBLERemoteService* s=client_->getService(SERVICE);
+  // JK BMS 标准结构：
+  // FFE0 = Service
+  // FFE1 = 命令写入特征（部分型号同时支持 Notify/Read）
+  // FFE2 = 数据通知特征（部分型号不存在）
+  NimBLERemoteService* s=client_->getService(NimBLEUUID(SERVICE));
   if(!s){
     client_->disconnect();
     setStatus(BOOT_SCANNING, "找不到FFE0服务");
     return false;
   }
 
-  // JK 部分机型在 FFE0 下存在两个同 UUID 的 FFE1：
-  // 一个负责写入，一个负责通知。不能只取第一个。
+  // 关键修复：
+  // 不能把 getUUID().toString() 与 "FFE1" 直接比较，因为 NimBLE
+  // 返回的可能是完整 UUID 0000ffe1-0000-1000-8000-00805f9b34fb。
+  // 直接按 NimBLEUUID 获取，兼容 16-bit/128-bit 表示。
+  NimBLERemoteCharacteristic* ffe1=s->getCharacteristic(NimBLEUUID(WRITE_CHAR));
+  NimBLERemoteCharacteristic* ffe2=s->getCharacteristic(NimBLEUUID(NOTIFY_CHAR));
+
   writeCh_=nullptr;
   notifyCh_=nullptr;
 
-  const std::vector<NimBLERemoteCharacteristic*>& chars=s->getCharacteristics(true);
-  for(size_t idx=0; idx<chars.size(); idx++){
-    NimBLERemoteCharacteristic* candidate=chars[idx];
-    if(!candidate || candidate->getUUID().toString()!=String(CHAR).c_str()) continue;
-    if(!writeCh_ && (candidate->canWrite() || candidate->canWriteNoResponse()))
-      writeCh_=candidate;
-    if(!notifyCh_ && candidate->canNotify())
-      notifyCh_=candidate;
+  if(ffe1 && (ffe1->canWrite() || ffe1->canWriteNoResponse()))
+    writeCh_=ffe1;
+
+  if(ffe2 && (ffe2->canNotify() || ffe2->canIndicate()))
+    notifyCh_=ffe2;
+
+  // 很多 JK02 实际只有 FFE1：FFE1 同时负责写命令和 Notify。
+  if(!notifyCh_ && ffe1 && (ffe1->canNotify() || ffe1->canIndicate()))
+    notifyCh_=ffe1;
+
+  // 少数固件把通知放在 FFE2，同时 FFE2 也可写。
+  if(!writeCh_ && ffe2 && (ffe2->canWrite() || ffe2->canWriteNoResponse()))
+    writeCh_=ffe2;
+
+  if(!writeCh_){
+    client_->disconnect();
+    setStatus(BOOT_SCANNING, "FFE1不可写");
+    return false;
   }
 
-  // 单 FFE1 机型通常同一个特征同时承担写入和通知。
-  if(!writeCh_) writeCh_=notifyCh_;
-  if(!notifyCh_) notifyCh_=writeCh_;
-
-  if(!writeCh_ || !notifyCh_){
+  if(!notifyCh_){
     client_->disconnect();
-    setStatus(BOOT_SCANNING, "FFE1读写特征无效");
+    setStatus(BOOT_SCANNING, "FFE1/FFE2无通知能力");
     return false;
   }
 
   ch_=writeCh_;
 
-  if(!notifyCh_->canNotify() || !notifyCh_->subscribe(true, notifyCallback)){
+  // 只有真正支持 Notify/Indicate 的特征才订阅。
+  bool subscribed=false;
+  if(notifyCh_->canNotify())
+    subscribed=notifyCh_->subscribe(true, notifyCallback);
+  else if(notifyCh_->canIndicate())
+    subscribed=notifyCh_->subscribe(false, notifyCallback);
+
+  if(!subscribed){
     client_->disconnect();
-    setStatus(BOOT_SCANNING, "FFE1通知订阅失败");
+    setStatus(BOOT_SCANNING, "FFE1/FFE2通知订阅失败");
     return false;
   }
 
@@ -181,6 +204,8 @@ bool JkBle::connectByAddress(const String& address){
   p.putString("mac", configuredAddress_);
   p.end();
 
+  // FFE1 是命令通道，不通过 readValue() 判断连接是否成功。
+  // JK BMS 的实时数据由通知回调进入 handleNotification()。
   request(0x96);
   delay(100);
   request(0x97);
@@ -236,9 +261,13 @@ void JkBle::handleNotification(const uint8_t* d,size_t n){
 
 void JkBle::request(uint8_t cmd){
   if(!writeCh_ && !ch_) return;
+
   NimBLERemoteCharacteristic* writer=writeCh_ ? writeCh_ : ch_;
   uint8_t f[20];
   protocol_.buildCommand(cmd,counter_++,f);
+
+  // JK02 FFE1 常见为 Write Without Response。
+  // 若设备只提供普通 Write，则使用带响应写入。
   if(writer->canWriteNoResponse())
     writer->writeValue(f,20,false);
   else if(writer->canWrite())
@@ -252,15 +281,12 @@ void JkBle::loop(){
     if(g_bmsData.bootState==BOOT_CONNECTED)
       setStatus(BOOT_SCANNING,"蓝牙已断开");
 
-    // 运行中断线后每15秒自动重新扫描/连接一次。
-    // 热点配置页面期间不主动抢占BLE扫描，避免影响网页操作。
     if(g_bmsData.bootState!=BOOT_HOTSPOT &&
        millis()-lastReconnectAttempt_>=15000){
       lastReconnectAttempt_=millis();
       scanAttempt_=0;
-      if(!scanAndConnect(3)){
+      if(!scanAndConnect(3))
         g_bmsData.online=false;
-      }
     }
     return;
   }
