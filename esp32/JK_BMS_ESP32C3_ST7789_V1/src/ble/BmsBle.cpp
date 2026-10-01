@@ -65,7 +65,7 @@ uint8_t BmsBle::scanDevices(uint32_t sec){
   s->setWindow(60);
 
   NimBLEScanResults r=s->getResults(sec*1000,false);
-  for(uint32_t i=0;(uint32_t)i<r.getCount() && scanCount_<JK_SCAN_RESULT_MAX;i++){
+  for(uint32_t i=0;(uint32_t)i<r.getCount() && scanCount_<BMS_SCAN_RESULT_MAX;i++){
     const NimBLEAdvertisedDevice* d=r.getDevice(i);
     if(!isCandidate(d)) continue;
 
