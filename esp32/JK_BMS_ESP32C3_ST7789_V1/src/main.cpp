@@ -4,11 +4,11 @@
 #include "esp_system.h"
 #include "tft_setup.h"
 #include "BmsData.h"
-#include "JkBle.h"
-#include "Display.h"
-#include "WebConfig.h"
+#include "ble/BmsBle.h"
+#include "display/Display.h"
+#include "web/WebConfig.h"
 
-static JkBle jk;
+static BmsBle bmsBle;
 static Display display;
 static WebConfig webConfig;
 static const char* AP_SSID="JK-BMS-SETUP";
@@ -47,12 +47,12 @@ void setup(){
 
   // 初始化显示和 BLE。
   display.begin();
-  jk.begin();
+  bmsBle.begin();
 
   // ================================
   // 开机优先检查“已经保存的蓝牙地址”
   // ================================
-  const String savedMac=jk.getConfiguredAddress();
+  const String savedMac=bmsBle.getConfiguredAddress();
 
   if(savedMac.length()==0){
     // 没有保存过蓝牙，直接进入热点配网。
@@ -76,17 +76,17 @@ void setup(){
 
   Serial.printf("BOOT: saved JK MAC = %s\\n",savedMac.c_str());
 
-  bool connectedOk=jk.connectByAddress(savedMac);
+  bool connectedOk=bmsBle.connectByAddress(savedMac);
 
   // GATT 连接建立后，还必须收到有效 JK 数据，才算真正成功。
-  if(connectedOk && jk.connected()){
+  if(connectedOk && bmsBle.connected()){
     uint32_t verifyStart=millis();
-    while(jk.connected() && !g_bmsData.valid &&
+    while(bmsBle.connected() && !g_bmsData.valid &&
           millis()-verifyStart<4000UL){
-      jk.loop();
+      bmsBle.loop();
       delay(20);
     }
-    connectedOk=jk.connected() && g_bmsData.valid;
+    connectedOk=bmsBle.connected() && g_bmsData.valid;
   }
 
   if(connectedOk){
@@ -101,7 +101,7 @@ void setup(){
   // 保存地址连接失败：先彻底释放 BLE Client，再进入热点。
   // 特别是“GATT 已连接但 4 秒内没有有效 JK 数据”的情况，
   // 此时 client_ 仍可能保持连接；不释放就直接启动 AP，容易触发 C3 重启。
-  jk.releaseConnectionForHotspot();
+  bmsBle.releaseConnectionForHotspot();
   g_bmsData.online=false;
   g_bmsData.valid=false;
   g_bmsData.bootState=BOOT_HOTSPOT;
@@ -114,7 +114,7 @@ void setup(){
   display.update(g_bmsData);
 }
 void loop(){
-  jk.loop();
+  bmsBle.loop();
   webConfig.loop();
   static uint32_t drawMs=0;
   if(millis()-drawMs>=500){
