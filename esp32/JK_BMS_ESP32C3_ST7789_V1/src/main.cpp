@@ -98,7 +98,10 @@ void setup(){
     return;
   }
 
-  // 保存地址连接失败：进入热点，让网页重新扫描/选择。
+  // 保存地址连接失败：先彻底释放 BLE Client，再进入热点。
+  // 特别是“GATT 已连接但 4 秒内没有有效 JK 数据”的情况，
+  // 此时 client_ 仍可能保持连接；不释放就直接启动 AP，容易触发 C3 重启。
+  jk.releaseConnectionForHotspot();
   g_bmsData.online=false;
   g_bmsData.valid=false;
   g_bmsData.bootState=BOOT_HOTSPOT;
