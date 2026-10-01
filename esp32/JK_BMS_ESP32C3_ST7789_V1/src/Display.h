@@ -18,12 +18,14 @@ private:
   TFT_eSprite barSprite_{&tft_};
 
   bool initialized_ = false;
+  bool hotspotShown_ = false;
   bool firstDashboard_ = true;
   BmsBootState lastBootState_ = BOOT_START;
 
   BmsData lastData_{};
 
   void drawFullPage(const BmsData& d);
+  void drawHotspotPage(const BmsData& d);
   void drawDashboard(const BmsData& d, bool force);
   void drawSoc(const BmsData& d);
   void drawVoltage(const BmsData& d);
