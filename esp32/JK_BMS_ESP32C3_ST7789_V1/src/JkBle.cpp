@@ -4,7 +4,7 @@
 
 static const char* SERVICE="FFE0";
 static const char* WRITE_CHAR="FFE1";
-static const char* NOTIFY_CHAR="FFE2";
+static const char* NOTIFY_CHAR="FFE2"; // 仅作兼容回退；JK V20 常见通知也在 FFE1
 JkBle* JkBle::instance_=nullptr;
 
 JkBle::JkBle():client_(nullptr),ch_(nullptr),writeCh_(nullptr),notifyCh_(nullptr),counter_(0),lastRequest_(0),lastReconnectAttempt_(0),
@@ -188,25 +188,29 @@ bool JkBle::connectByAddress(const String& address, uint8_t addressType){
   // 不能把 getUUID().toString() 与 "FFE1" 直接比较，因为 NimBLE
   // 返回的可能是完整 UUID 0000ffe1-0000-1000-8000-00805f9b34fb。
   // 直接按 NimBLEUUID 获取，兼容 16-bit/128-bit 表示。
+  // JK V20/JK02：优先按 characteristic properties 判断通信方向。
+  // 常见结构是 FFE1 同时承担 Write + Notify；FFE2 只作兼容回退。
   NimBLERemoteCharacteristic* ffe1=s->getCharacteristic(NimBLEUUID(WRITE_CHAR));
   NimBLERemoteCharacteristic* ffe2=s->getCharacteristic(NimBLEUUID(NOTIFY_CHAR));
 
   writeCh_=nullptr;
   notifyCh_=nullptr;
 
-  if(ffe1 && (ffe1->canWrite() || ffe1->canWriteNoResponse()))
+  if(ffe1 && (ffe1->canWriteNoResponse() || ffe1->canWrite()))
     writeCh_=ffe1;
-
-  if(ffe2 && (ffe2->canNotify() || ffe2->canIndicate()))
-    notifyCh_=ffe2;
-
-  // 很多 JK02 实际只有 FFE1：FFE1 同时负责写命令和 Notify。
-  if(!notifyCh_ && ffe1 && (ffe1->canNotify() || ffe1->canIndicate()))
+  if(ffe1 && (ffe1->canNotify() || ffe1->canIndicate()))
     notifyCh_=ffe1;
 
-  // 少数固件把通知放在 FFE2，同时 FFE2 也可写。
-  if(!writeCh_ && ffe2 && (ffe2->canWrite() || ffe2->canWriteNoResponse()))
+  if(!notifyCh_ && ffe2 && (ffe2->canNotify() || ffe2->canIndicate()))
+    notifyCh_=ffe2;
+  if(!writeCh_ && ffe2 && (ffe2->canWriteNoResponse() || ffe2->canWrite()))
     writeCh_=ffe2;
+
+  Serial.printf("JK BLE chars: FFE1 write=%d notify=%d; FFE2 write=%d notify=%d\\n",
+                ffe1 ? (int)(ffe1->canWriteNoResponse() || ffe1->canWrite()) : 0,
+                ffe1 ? (int)(ffe1->canNotify() || ffe1->canIndicate()) : 0,
+                ffe2 ? (int)(ffe2->canWriteNoResponse() || ffe2->canWrite()) : 0,
+                ffe2 ? (int)(ffe2->canNotify() || ffe2->canIndicate()) : 0);
 
   if(!writeCh_){
     client_->disconnect();
@@ -276,6 +280,13 @@ void JkBle::notifyCallback(NimBLERemoteCharacteristic*,uint8_t* d,size_t n,bool)
 }
 
 void JkBle::handleNotification(const uint8_t* d,size_t n){
+  // JK V20 调试：确认通知特征确实有原始数据。
+  Serial.printf("JK RX notify len=%u: ", (unsigned)n);
+  size_t dump=n<24?n:24;
+  for(size_t i=0;i<dump;i++) Serial.printf("%02X ",d[i]);
+  if(n>dump) Serial.print("...");
+  Serial.println();
+
   static uint8_t rx[700];
   static size_t len=0;
   if(n>sizeof(rx) || len+n>sizeof(rx)){len=0;return;}
