@@ -31,92 +31,85 @@ static void startHotspot(){
 void setup(){
   Serial.begin(115200);
   delay(50);
+
   esp_reset_reason_t resetReason=esp_reset_reason();
   Serial.println();
   Serial.printf("ESP32 reset reason: %d\\n",(int)resetReason);
-  Serial.printf("RTC failed scans: %u\\n",(unsigned)rtcFailedScanAttempts);
 
   pinMode(TFT_BL,OUTPUT);
   digitalWrite(TFT_BL,LOW);
   delay(20);
+
   g_bmsData.scanMax=3;
   g_bmsData.online=false;
   g_bmsData.valid=false;
   g_bmsData.hotspot=false;
 
-  if(rtcFailedScanAttempts>=3){
-    g_bmsData.scanAttempt=3;
+  // 初始化显示和 BLE。
+  display.begin();
+  jk.begin();
+
+  // ================================
+  // 开机优先检查“已经保存的蓝牙地址”
+  // ================================
+  const String savedMac=jk.getConfiguredAddress();
+
+  if(savedMac.length()==0){
+    // 没有保存过蓝牙，直接进入热点配网。
+    g_bmsData.scanAttempt=0;
     g_bmsData.bootState=BOOT_HOTSPOT;
-    g_bmsData.statusMessage="三次连接失败，进入配网";
-    display.begin();
+    g_bmsData.statusMessage="未保存蓝牙，进入配网";
     display.update(g_bmsData);
     delay(100);
-
-    // 重要：如果是“重启后直接进入配网”路径，前面没有执行 jk.begin()。
-    // 网页端扫描/连接会调用 NimBLE，因此这里必须先初始化 BLE。
-    // 只初始化一次，不重复创建 Client。
-    jk.begin();
-
     startHotspot();
     display.update(g_bmsData);
     return;
   }
 
-  g_bmsData.bootState=BOOT_SCANNING;
-  g_bmsData.scanAttempt=(uint8_t)(rtcFailedScanAttempts+1);
-  g_bmsData.statusMessage="扫描蓝牙电池 "+String(g_bmsData.scanAttempt)+"/3";
-  display.begin();
+  // 有保存地址：只尝试连接这个地址，不再盲目扫描其它设备。
+  g_bmsData.scanAttempt=1;
+  g_bmsData.bootState=BOOT_CONNECTING;
+  g_bmsData.statusMessage="连接已保存蓝牙";
+  g_bmsData.mac=savedMac;
   display.update(g_bmsData);
-  delay(300);
-  jk.begin();
+  delay(100);
 
-  bool connectedOk=false;
-  uint8_t firstAttempt=(uint8_t)(rtcFailedScanAttempts+1);
-  if(firstAttempt>3) firstAttempt=3;
+  Serial.printf("BOOT: saved JK MAC = %s\\n",savedMac.c_str());
 
-  for(uint8_t attempt=firstAttempt;attempt<=3 && !connectedOk;attempt++){
-    g_bmsData.scanAttempt=attempt;
-    g_bmsData.scanMax=3;
-    g_bmsData.bootState=BOOT_SCANNING;
-    g_bmsData.online=false;
-    g_bmsData.valid=false;
-    g_bmsData.statusMessage="扫描蓝牙电池 "+String(attempt)+"/3";
-    display.update(g_bmsData);
-    delay(30);
+  bool connectedOk=jk.connectByAddress(savedMac);
 
-    bool attemptOk=jk.scanAndConnect(5,attempt);
-    if(attemptOk && jk.connected()){
-      uint32_t verifyStart=millis();
-      while(jk.connected() && !g_bmsData.valid && millis()-verifyStart<4000UL){
-        jk.loop();
-        delay(20);
-      }
+  // GATT 连接建立后，还必须收到有效 JK 数据，才算真正成功。
+  if(connectedOk && jk.connected()){
+    uint32_t verifyStart=millis();
+    while(jk.connected() && !g_bmsData.valid &&
+          millis()-verifyStart<4000UL){
+      jk.loop();
+      delay(20);
     }
-
-    connectedOk=attemptOk && jk.connected() && g_bmsData.valid;
-    if(connectedOk){
-      rtcFailedScanAttempts=0;
-      g_bmsData.bootState=BOOT_CONNECTED;
-      g_bmsData.online=true;
-      g_bmsData.statusMessage="已连接JK电池";
-      display.update(g_bmsData);
-    }else{
-      g_bmsData.online=false;
-      g_bmsData.bootState=BOOT_SCANNING;
-      rtcFailedScanAttempts=attempt;
-      g_bmsData.statusMessage="第 "+String(attempt)+"/3 次连接失败";
-      display.update(g_bmsData);
-      if(attempt<3) delay(300);
-    }
+    connectedOk=jk.connected() && g_bmsData.valid;
   }
 
-  if(!connectedOk){
-    rtcFailedScanAttempts=3;
-    startHotspot();
+  if(connectedOk){
+    g_bmsData.bootState=BOOT_CONNECTED;
+    g_bmsData.online=true;
+    g_bmsData.statusMessage="已连接保存的JK电池";
     display.update(g_bmsData);
+    Serial.println("BOOT: saved Bluetooth connected and JK data valid.");
+    return;
   }
+
+  // 保存地址连接失败：进入热点，让网页重新扫描/选择。
+  g_bmsData.online=false;
+  g_bmsData.valid=false;
+  g_bmsData.bootState=BOOT_HOTSPOT;
+  g_bmsData.statusMessage="蓝牙连接失败，进入配网";
+  display.update(g_bmsData);
+  delay(100);
+
+  Serial.println("BOOT: saved Bluetooth connection failed, entering hotspot.");
+  startHotspot();
+  display.update(g_bmsData);
 }
-
 void loop(){
   jk.loop();
   webConfig.loop();
