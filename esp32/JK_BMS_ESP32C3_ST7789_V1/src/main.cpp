@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <HardwareSerial.h>
 #include <WiFi.h>
+#include "esp_system.h"
 #include "../tft_setup.h"
 #include "BmsData.h"
 #include "JkBle.h"
@@ -32,6 +33,14 @@ static void startHotspot(){
 }
 
 void setup(){
+  // 记录上一次复位原因。若扫描过程中再次整机重启，
+  // 串口会明确显示是 Brownout / Watchdog / Panic 等原因。
+  Serial.begin(115200);
+  delay(50);
+  Serial.println();
+  Serial.print("ESP32 reset reason: ");
+  Serial.println((int)esp_reset_reason());
+
   // 背光脚必须在最早阶段明确拉低，避免 GPIO5 上电悬空导致背光闪烁。
   pinMode(TFT_BL, OUTPUT);
   digitalWrite(TFT_BL, LOW);
