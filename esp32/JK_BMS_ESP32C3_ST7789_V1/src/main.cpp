@@ -83,11 +83,25 @@ void setup(){
 
     bool attemptOk=jk.scanAndConnect(5, attempt);
 
-    // 必须同时满足：
-    // 1. scanAndConnect() 返回成功
-    // 2. NimBLE 客户端确认仍处于连接状态
-    // 才允许进入主界面。
-    connectedOk=attemptOk && jk.connected();
+    // “BLE/GATT 已连接”还不能证明这是一个真正可通信的 JK BMS。
+    // 必须继续等待 JK 的有效主数据帧；JkProtocol::parseFrame()
+    // 成功后才会把 g_bmsData.valid 置为 true。
+    // 这样可以避免连接到错误的 BLE 设备、服务存在但协议不匹配，
+    // 或通知没有正常工作的设备后直接误进入主界面。
+    if(attemptOk && jk.connected()){
+      uint32_t verifyStart=millis();
+      while(jk.connected() &&
+            !g_bmsData.valid &&
+            millis()-verifyStart<4000UL){
+        jk.loop();
+        delay(20);
+      }
+    }
+
+    // 真正成功必须同时满足：
+    // 1. BLE 客户端仍然连接
+    // 2. 已收到并校验通过 JK 有效数据帧
+    connectedOk=attemptOk && jk.connected() && g_bmsData.valid;
 
     if(connectedOk){
       g_bmsData.bootState=BOOT_CONNECTED;
