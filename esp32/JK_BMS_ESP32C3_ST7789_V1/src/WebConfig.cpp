@@ -227,7 +227,8 @@ void WebConfig::handleConnect(){
 
   bool ok=ble_->connectDeviceByIndex((uint8_t)index);
   String j="{\"ok\":" + String(ok?"true":"false")+
-           ",\"message\":\""+String(ok?"连接成功":"连接失败")+"\"}";
+           ",\"message\":\""+String(ok?"连接成功":"连接失败")+"\""+
+           ",\"mac\":\""+jsonEscape(g_bmsData.mac)+"\"}";
   server_.send(ok?200:500,"application/json; charset=utf-8",j);
 }
 
@@ -239,6 +240,10 @@ void WebConfig::handleSave(){
 
   String mac=server_.hasArg("mac")?server_.arg("mac"):"";
   mac.trim();
+
+  // 没有手工填写时，直接保存当前已经连接的 JK 蓝牙地址。
+  if(mac.length()==0 && g_bmsData.mac.length())
+    mac=g_bmsData.mac;
 
   bool is32=server_.hasArg("proto") ? server_.arg("proto")=="32" : true;
 
@@ -264,7 +269,8 @@ void WebConfig::handleSave(){
   }
 
   server_.send(200,"application/json; charset=utf-8",
-               "{\"message\":\"参数已保存，下次开机自动使用\"}");
+               "{\"message\":\"参数已保存，下次开机自动使用\""
+               ",\"mac\":\""+jsonEscape(mac)+"\"}");
 }
 
 void WebConfig::handleNotFound(){
