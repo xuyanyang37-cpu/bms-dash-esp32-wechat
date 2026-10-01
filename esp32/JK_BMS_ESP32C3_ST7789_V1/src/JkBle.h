@@ -9,6 +9,7 @@
 
 struct JkScanItem {
   String address;
+  uint8_t addressType=BLE_ADDR_PUBLIC;
   String name;
   int rssi;
 };
@@ -18,7 +19,7 @@ public:
   JkBle();
   bool begin();
   bool scanAndConnect(uint32_t seconds=5, uint8_t attemptOverride=0);
-  bool connectByAddress(const String& address);
+  bool connectByAddress(const String& address, uint8_t addressType=BLE_ADDR_PUBLIC);
   uint8_t scanDevices(uint32_t seconds=5);
   bool connectDeviceByIndex(uint8_t index);
   bool connected() const;
