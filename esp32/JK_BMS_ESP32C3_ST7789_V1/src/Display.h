@@ -19,11 +19,13 @@ private:
 
   bool initialized_ = false;
   bool firstDashboard_ = true;
+  bool scanScreenInitialized_ = false;
   BmsBootState lastBootState_ = BOOT_START;
 
   BmsData lastData_{};
 
   void drawFullPage(const BmsData& d);
+  void drawScanningScreen(const BmsData& d, bool force);
   void drawDashboard(const BmsData& d, bool force);
   void drawSoc(const BmsData& d);
   void drawVoltage(const BmsData& d);
