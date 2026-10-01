@@ -123,6 +123,21 @@ void Display::begin() {
 void Display::update(const BmsData& d) {
   if (!initialized_) return;
 
+  // 扫描阶段单独处理：
+  // 第一次进入扫描页才整页绘制，后续 1/3 -> 2/3 -> 3/3
+  // 只刷新进度条和次数，不再 fillScreen()/整页 pushSprite()。
+  if (d.bootState == BOOT_SCANNING || d.bootState == BOOT_START) {
+    bool force = !scanScreenInitialized_ || lastBootState_ != d.bootState;
+    drawScanningScreen(d, force);
+    scanScreenInitialized_ = true;
+    lastBootState_ = d.bootState;
+    lastData_ = d;
+    return;
+  }
+
+  // 离开扫描页时，允许下一次扫描重新初始化静态区域。
+  scanScreenInitialized_ = false;
+
   if (d.bootState != lastBootState_ ||
       d.hotspot != lastData_.hotspot) {
     drawFullPage(d);
@@ -145,6 +160,55 @@ void Display::update(const BmsData& d) {
   drawDashboard(d, firstDashboard_);
   firstDashboard_ = false;
   lastData_ = d;
+}
+
+void Display::drawScanningScreen(const BmsData& d, bool force) {
+  // 只在第一次进入扫描页时画固定内容。
+  if (force) {
+    tft_.fillScreen(TFT_BLACK);
+
+    FontGB2312::drawCenterString(tft_, 160, 7,
+                                 "连接电池",
+                                 TFT_CYAN, TFT_BLACK, 2);
+
+    FontGB2312::drawCenterString(tft_, 160, 43,
+                                 "扫描蓝牙电池",
+                                 TFT_WHITE, TFT_BLACK, 1);
+
+    tft_.drawRoundRect(35, 72, 250, 18, 5, TFT_DARKGREY);
+
+    FontGB2312::drawCenterString(tft_, 160, 135,
+                                 "自动扫描并连接JK保护板",
+                                 TFT_LIGHTGREY, TFT_BLACK, 1);
+  }
+
+  // 只刷新进度条内部区域，不碰其它区域。
+  TFT_eSprite scanSprite(&tft_);
+  scanSprite.setColorDepth(16);
+  scanSprite.createSprite(244, 12);
+  scanSprite.fillSprite(TFT_BLACK);
+
+  int progress = (d.scanAttempt * 100) / 3;
+  if (progress > 100) progress = 100;
+  if (progress < 0) progress = 0;
+
+  int filled = 238 * progress / 100;
+  if (filled > 0)
+    scanSprite.fillRoundRect(1, 1, filled, 10, 4, TFT_BLUE);
+
+  scanSprite.pushSprite(38, 75);
+  scanSprite.deleteSprite();
+
+  // 次数单独做一个很小的局部 Sprite。
+  TFT_eSprite countSprite(&tft_);
+  countSprite.setColorDepth(16);
+  countSprite.createSprite(80, 25);
+  countSprite.fillSprite(TFT_BLACK);
+  FontGB2312::drawCenterString(countSprite, 40, 2,
+                               String(d.scanAttempt) + "/3",
+                               TFT_YELLOW, TFT_BLACK, 1);
+  countSprite.pushSprite(120, 96);
+  countSprite.deleteSprite();
 }
 
 void Display::drawFullPage(const BmsData& d) {
