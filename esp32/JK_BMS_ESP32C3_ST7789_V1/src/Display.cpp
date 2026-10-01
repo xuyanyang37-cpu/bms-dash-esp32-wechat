@@ -300,30 +300,68 @@ void Display::drawFullPage(const BmsData& d) {
 
   if ((d.bootState == BOOT_HOTSPOT || d.hotspot) &&
       !d.online) {
-    TFT_eSprite page(&tft_);
-    page.setColorDepth(16);
-    page.createSprite(320, 170);
-    page.fillSprite(TFT_BLACK);
+    // 热点页禁止申请 320x170 的全屏 Sprite。
+    // 320x170x16bit 约需要 109KB 连续 RAM；连续 BLE 扫描三次后，
+    // 堆内存可能已经碎片化，导致 createSprite() 失败，表现为
+    // “背光亮但屏幕没有界面”。
+    // 改为：背景直接清屏，中文/英文分别使用小尺寸局部 Sprite。
+    tft_.fillScreen(TFT_BLACK);
 
-    FontGB2312::drawCenterString(page, 160, 5,
-                                 "热点设置",
-                                 TFT_YELLOW, TFT_BLACK, 2);
-    FontGB2312::drawCenterString(page, 160, 43,
-                                 "WiFi: JK-BMS-SETUP",
-                                 TFT_WHITE, TFT_BLACK, 1);
-    FontGB2312::drawCenterString(page, 160, 70,
-                                 "手机连接后打开网页",
-                                 TFT_CYAN, TFT_BLACK, 1);
-    FontGB2312::drawCenterString(
-        page, 160, 94,
-        d.hotspotIp.length() ? d.hotspotIp : "192.168.4.1",
-        TFT_CYAN, TFT_BLACK, 1);
-    FontGB2312::drawCenterString(page, 160, 130,
-                                 "扫描 / 选择 / 连接电池",
-                                 TFT_LIGHTGREY, TFT_BLACK, 1);
+    TFT_eSprite title(&tft_);
+    title.setColorDepth(16);
+    if(title.createSprite(320, 32)){
+      title.fillSprite(TFT_BLACK);
+      FontGB2312::drawCenterString(title, 160, 3,
+                                   "热点设置",
+                                   TFT_YELLOW, TFT_BLACK, 2);
+      title.pushSprite(0, 3);
+      title.deleteSprite();
+    }
 
-    page.pushSprite(0, 0);
-    page.deleteSprite();
+    TFT_eSprite wifi(&tft_);
+    wifi.setColorDepth(16);
+    if(wifi.createSprite(320, 28)){
+      wifi.fillSprite(TFT_BLACK);
+      FontGB2312::drawCenterString(wifi, 160, 3,
+                                   "WiFi: JK-BMS-SETUP",
+                                   TFT_WHITE, TFT_BLACK, 1);
+      wifi.pushSprite(0, 40);
+      wifi.deleteSprite();
+    }
+
+    TFT_eSprite hint(&tft_);
+    hint.setColorDepth(16);
+    if(hint.createSprite(320, 28)){
+      hint.fillSprite(TFT_BLACK);
+      FontGB2312::drawCenterString(hint, 160, 3,
+                                   "手机连接后打开网页",
+                                   TFT_CYAN, TFT_BLACK, 1);
+      hint.pushSprite(0, 69);
+      hint.deleteSprite();
+    }
+
+    TFT_eSprite ip(&tft_);
+    ip.setColorDepth(16);
+    if(ip.createSprite(320, 30)){
+      ip.fillSprite(TFT_BLACK);
+      FontGB2312::drawCenterString(
+          ip, 160, 3,
+          d.hotspotIp.length() ? d.hotspotIp : "192.168.4.1",
+          TFT_CYAN, TFT_BLACK, 2);
+      ip.pushSprite(0, 98);
+      ip.deleteSprite();
+    }
+
+    TFT_eSprite bottom(&tft_);
+    bottom.setColorDepth(16);
+    if(bottom.createSprite(320, 28)){
+      bottom.fillSprite(TFT_BLACK);
+      FontGB2312::drawCenterString(bottom, 160, 3,
+                                   "扫描 / 选择 / 连接电池",
+                                   TFT_LIGHTGREY, TFT_BLACK, 1);
+      bottom.pushSprite(0, 133);
+      bottom.deleteSprite();
+    }
     return;
   }
 
