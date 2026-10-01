@@ -87,15 +87,36 @@ void setup(){
     display.update(g_bmsData);
     delay(30);
 
-    ok=jk.scanAndConnect(5, attempt);
+    bool attemptOk=jk.scanAndConnect(5, attempt);
 
-    // 扫描/连接结束后立即刷新结果，不必等主循环的500ms周期。
-    display.update(g_bmsData);
+    // scanAndConnect() 返回 true 的条件是已经完成 BLE 连接。
+    // 再用 connected() 做一次硬确认，防止异常状态误进入主界面。
+    connectedOk=attemptOk && jk.connected();
 
-    if(!ok) delay(300);
+    if(connectedOk){
+      g_bmsData.bootState=BOOT_CONNECTED;
+      g_bmsData.online=true;
+      g_bmsData.statusMessage="已连接JK电池";
+
+      // 只有这里才允许从扫描/连接页切换到主仪表盘。
+      display.update(g_bmsData);
+    }else{
+      g_bmsData.online=false;
+      g_bmsData.bootState=BOOT_SCANNING;
+
+      // 本次连接失败，明确显示失败后再进入下一次扫描。
+      g_bmsData.statusMessage="第 " + String(attempt) + "/3 次连接失败";
+      display.update(g_bmsData);
+
+      if(attempt < 3) delay(300);
+    }
   }
 
-  if(!ok) startHotspot();
+  // 三次扫描/连接全部失败：禁止进入主界面，直接进入配网热点。
+  if(!connectedOk){
+    startHotspot();
+    display.update(g_bmsData);
+  }
 }
 
 void loop(){
