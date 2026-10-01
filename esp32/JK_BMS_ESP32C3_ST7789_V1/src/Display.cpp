@@ -167,19 +167,42 @@ void Display::drawScanningScreen(const BmsData& d, bool force) {
   if (force) {
     tft_.fillScreen(TFT_BLACK);
 
-    FontGB2312::drawCenterString(tft_, 160, 7,
-                                 "连接电池",
-                                 TFT_CYAN, TFT_BLACK, 2);
+    // 扫描页文字统一绘制到 Sprite，不直接绘制到 tft_。
+    TFT_eSprite scanSprite(&tft_);
+    scanSprite.setColorDepth(16);
 
-    FontGB2312::drawCenterString(tft_, 160, 43,
-                                 "扫描蓝牙电池",
-                                 TFT_WHITE, TFT_BLACK, 1);
+    if (scanSprite.createSprite(320, 60)) {
+      scanSprite.fillSprite(TFT_BLACK);
 
+      FontGB2312::drawCenterString(scanSprite, 160, 7,
+                                   "连接电池",
+                                   TFT_CYAN, TFT_BLACK, 2);
+
+      FontGB2312::drawCenterString(scanSprite, 160, 43,
+                                   "扫描蓝牙电池",
+                                   TFT_WHITE, TFT_BLACK, 1);
+
+      scanSprite.pushSprite(0, 0);
+      scanSprite.deleteSprite();
+    }
+
+    // 进度条外框
     tft_.drawRoundRect(35, 72, 250, 18, 5, TFT_DARKGREY);
 
-    FontGB2312::drawCenterString(tft_, 160, 135,
-                                 "自动扫描并连接JK保护板",
-                                 TFT_LIGHTGREY, TFT_BLACK, 1);
+    // 底部文字也使用 Sprite，避免 tft_ 直接绘制中文。
+    TFT_eSprite bottomSprite(&tft_);
+    bottomSprite.setColorDepth(16);
+
+    if (bottomSprite.createSprite(320, 35)) {
+      bottomSprite.fillSprite(TFT_BLACK);
+
+      FontGB2312::drawCenterString(bottomSprite, 160, 5,
+                                   "自动扫描并连接JK保护板",
+                                   TFT_LIGHTGREY, TFT_BLACK, 1);
+
+      bottomSprite.pushSprite(0, 130);
+      bottomSprite.deleteSprite();
+    }
   }
 
   // 只刷新进度条内部区域，不碰其它区域。
