@@ -63,6 +63,8 @@ uint8_t JkBle::scanDevices(uint32_t sec){
     if(!isCandidate(d)) continue;
 
     scanItems_[scanCount_].address=d->getAddress().toString().c_str();
+    scanItems_[scanCount_].addressType=d->getAddressType();
+    Serial.printf("JK BLE: %s type=%u RSSI=%d\\n", scanItems_[scanCount_].address.c_str(), scanItems_[scanCount_].addressType, d->getRSSI());
     scanItems_[scanCount_].name=d->getName().c_str();
     if(scanItems_[scanCount_].name.length()==0) scanItems_[scanCount_].name="JK-BMS";
     scanItems_[scanCount_].rssi=d->getRSSI();
@@ -113,13 +115,13 @@ bool JkBle::scanAndConnect(uint32_t sec, uint8_t attemptOverride){
 
 bool JkBle::connectDeviceByIndex(uint8_t index){
   if(index>=scanCount_) return false;
-  return connectByAddress(scanItems_[index].address);
+  return connectByAddress(scanItems_[index].address, scanItems_[index].addressType);
 }
 
-bool JkBle::connectByAddress(const String& address){
+bool JkBle::connectByAddress(const String& address, uint8_t addressType){
   if(address.length()==0) return false;
 
-  NimBLEAddress addr(address.c_str(), BLE_ADDR_PUBLIC);
+  NimBLEAddress addr(address.c_str(), addressType);
   if(client_){
     if(client_->isConnected()) client_->disconnect();
     NimBLEDevice::deleteClient(client_);
@@ -129,6 +131,7 @@ bool JkBle::connectByAddress(const String& address){
     notifyCh_=nullptr;
   }
 
+  Serial.printf("JK BLE: connect %s type=%u (%s)\\n", address.c_str(), addressType, addressType == BLE_ADDR_PUBLIC ? "PUBLIC" : "RANDOM");
   setStatus(BOOT_CONNECTING, "连接 " + address);
 
   client_=NimBLEDevice::createClient();
