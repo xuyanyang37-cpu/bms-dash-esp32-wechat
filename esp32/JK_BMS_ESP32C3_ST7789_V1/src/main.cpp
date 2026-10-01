@@ -48,12 +48,7 @@ void setup(){
   // 等待电源/IO 稳定后再初始化 ST7789。
   delay(20);
 
-  //Serial.println("ESP32-C3 JK BMS + ST7789 UI 2.0");
-  //Serial.println("BL=5 CS=3 DC=2 RES=10 SDA=7 SCL=6");
-
   // 在显示器初始化之前就明确进入“扫描”状态。
-  // 不能让 BmsData 仍保持 BOOT_START/默认状态，
-  // 否则初始化后的第一次刷新可能直接走主界面路径。
   g_bmsData.bootState=BOOT_SCANNING;
   g_bmsData.scanAttempt=1;
   g_bmsData.scanMax=3;
@@ -64,17 +59,16 @@ void setup(){
   display.begin();
 
   // 开机扫描页先稳定显示，再初始化 BLE。
-  // 这样用户一定能看到“扫描蓝牙电池”开机界面。
   display.update(g_bmsData);
   delay(300);
 
   jk.begin();
 
   // 开机最多自动扫描三次；三次都失败后进入AP热点设置模式。
-  // 注意：scanAndConnect() 内部的 BLE 扫描是阻塞式的，因此在调用它之前
-  // 必须先刷新一次屏幕，否则屏幕会一直停在初始化时的 0/3。
-  bool ok=false;
-  for(uint8_t i=0;i<3 && !ok;i++){
+  // connectedOk 是整个 setup() 的唯一“蓝牙已确认连接”状态。
+  bool connectedOk=false;
+
+  for(uint8_t i=0;i<3 && !connectedOk;i++){
     uint8_t attempt=(uint8_t)(i+1);
 
     g_bmsData.scanAttempt=attempt;
@@ -89,8 +83,10 @@ void setup(){
 
     bool attemptOk=jk.scanAndConnect(5, attempt);
 
-    // scanAndConnect() 返回 true 的条件是已经完成 BLE 连接。
-    // 再用 connected() 做一次硬确认，防止异常状态误进入主界面。
+    // 必须同时满足：
+    // 1. scanAndConnect() 返回成功
+    // 2. NimBLE 客户端确认仍处于连接状态
+    // 才允许进入主界面。
     connectedOk=attemptOk && jk.connected();
 
     if(connectedOk){
