@@ -278,23 +278,44 @@ void Display::drawFullPage(const BmsData& d) {
   }
 
   if (d.bootState == BOOT_CONNECTING) {
-    TFT_eSprite page(&tft_);
-    page.setColorDepth(16);
-    page.createSprite(320, 170);
-    page.fillSprite(TFT_BLACK);
+    // 连接页也禁止 320x170 全屏 Sprite。
+    // BLE 连接阶段堆内存最紧张，此时申请约 109KB 连续 RAM 容易失败，
+    // 随后进入热点时又要启动 WiFi，可能表现为重启。
+    // 这里先直接清黑屏，再使用几个小 Sprite。
+    tft_.fillScreen(TFT_BLACK);
 
-    FontGB2312::drawCenterString(page, 160, 8,
-                                 "正在连接",
-                                 TFT_YELLOW, TFT_BLACK, 2);
-    FontGB2312::drawCenterString(page, 160, 50,
-                                 d.mac.length() ? d.mac : "JK-BMS",
-                                 TFT_WHITE, TFT_BLACK, 1);
-    FontGB2312::drawCenterString(page, 160, 82,
-                                 "正在建立蓝牙连接...",
-                                 TFT_WHITE, TFT_BLACK, 1);
+    TFT_eSprite title(&tft_);
+    title.setColorDepth(16);
+    if(title.createSprite(320, 32)){
+      title.fillSprite(TFT_BLACK);
+      FontGB2312::drawCenterString(title, 160, 4,
+                                   "正在连接",
+                                   TFT_YELLOW, TFT_BLACK, 2);
+      title.pushSprite(0, 5);
+      title.deleteSprite();
+    }
 
-    page.pushSprite(0, 0);
-    page.deleteSprite();
+    TFT_eSprite mac(&tft_);
+    mac.setColorDepth(16);
+    if(mac.createSprite(320, 28)){
+      mac.fillSprite(TFT_BLACK);
+      FontGB2312::drawCenterString(mac, 160, 4,
+                                   d.mac.length() ? d.mac : "JK-BMS",
+                                   TFT_WHITE, TFT_BLACK, 1);
+      mac.pushSprite(0, 47);
+      mac.deleteSprite();
+    }
+
+    TFT_eSprite hint(&tft_);
+    hint.setColorDepth(16);
+    if(hint.createSprite(320, 28)){
+      hint.fillSprite(TFT_BLACK);
+      FontGB2312::drawCenterString(hint, 160, 4,
+                                   "正在建立蓝牙连接...",
+                                   TFT_WHITE, TFT_BLACK, 1);
+      hint.pushSprite(0, 82);
+      hint.deleteSprite();
+    }
     return;
   }
 
