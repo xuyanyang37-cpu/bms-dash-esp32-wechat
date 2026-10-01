@@ -71,11 +71,18 @@ uint8_t JkBle::scanDevices(uint32_t sec){
   return scanCount_;
 }
 
-bool JkBle::scanAndConnect(uint32_t sec){
+bool JkBle::scanAndConnect(uint32_t sec, uint8_t attemptOverride){
   if(connected()) return true;
 
-  scanAttempt_++;
-  if(scanAttempt_>3) scanAttempt_=3;
+  // attemptOverride 用于开机阶段：
+  // main.cpp 会先把“1/3、2/3、3/3”画到屏幕，再进入阻塞式BLE扫描。
+  // 这样第一次扫描期间不会一直停留在初始的 0/3。
+  if(attemptOverride>=1 && attemptOverride<=3){
+    scanAttempt_=attemptOverride;
+  }else{
+    scanAttempt_++;
+    if(scanAttempt_>3) scanAttempt_=3;
+  }
   g_bmsData.scanAttempt=scanAttempt_;
   setStatus(BOOT_SCANNING, "扫描蓝牙电池 " + String(scanAttempt_) + "/3");
 
@@ -291,7 +298,10 @@ void JkBle::loop(){
     return;
   }
 
-  if(millis()-lastRequest_>5000){
+  // 首次连接后如果尚未收到有效数据，缩短查询间隔；
+  // 收到有效数据后恢复 5 秒一次，避免长期停留在全 0 的仪表盘。
+  uint32_t requestInterval = g_bmsData.valid ? 5000UL : 1500UL;
+  if(millis()-lastRequest_>requestInterval){
     request(0x96);
     lastRequest_=millis();
   }
