@@ -23,6 +23,7 @@ public:
   uint8_t scanDevices(uint32_t seconds=5);
   bool connectDeviceByIndex(uint8_t index);
   bool connected() const;
+  // 进入热点配网前释放当前 GATT Client，避免 BLE Client 与 WiFi AP 同时占用堆内存。\n  void releaseConnectionForHotspot();
   void loop();
 
   uint8_t getScanCount() const { return scanCount_; }
