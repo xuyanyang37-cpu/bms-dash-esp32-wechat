@@ -51,7 +51,23 @@ void setup(){
   //Serial.println("ESP32-C3 JK BMS + ST7789 UI 2.0");
   //Serial.println("BL=5 CS=3 DC=2 RES=10 SDA=7 SCL=6");
 
+  // 在显示器初始化之前就明确进入“扫描”状态。
+  // 不能让 BmsData 仍保持 BOOT_START/默认状态，
+  // 否则初始化后的第一次刷新可能直接走主界面路径。
+  g_bmsData.bootState=BOOT_SCANNING;
+  g_bmsData.scanAttempt=1;
+  g_bmsData.scanMax=3;
+  g_bmsData.online=false;
+  g_bmsData.valid=false;
+  g_bmsData.statusMessage="扫描蓝牙电池 1/3";
+
   display.begin();
+
+  // 开机扫描页先稳定显示，再初始化 BLE。
+  // 这样用户一定能看到“扫描蓝牙电池”开机界面。
+  display.update(g_bmsData);
+  delay(300);
+
   jk.begin();
 
   // 开机最多自动扫描三次；三次都失败后进入AP热点设置模式。
