@@ -119,7 +119,7 @@ bool JkBle::connectDeviceByIndex(uint8_t index){
 bool JkBle::connectByAddress(const String& address){
   if(address.length()==0) return false;
 
-  NimBLEAddress addr(address.c_str());
+  NimBLEAddress addr(address.c_str(), BLE_ADDR_PUBLIC);
   if(client_){
     if(client_->isConnected()) client_->disconnect();
     NimBLEDevice::deleteClient(client_);
