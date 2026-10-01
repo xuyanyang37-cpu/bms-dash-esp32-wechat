@@ -68,6 +68,13 @@ uint8_t JkBle::scanDevices(uint32_t sec){
     scanItems_[scanCount_].rssi=d->getRSSI();
     scanCount_++;
   }
+
+  // 本次扫描结束后立即停止并清理扫描缓存。
+  // 连续 1/3 -> 2/3 -> 3/3 时如果不清理 NimBLE 扫描结果，
+  // ESP32-C3 的堆内存可能持续增长，最终触发异常重启。
+  s->stop();
+  s->clearResults();
+
   return scanCount_;
 }
 
@@ -134,6 +141,13 @@ bool JkBle::connectByAddress(const String& address){
   if(!client_->connect(addr)){
     setStatus(BOOT_SCANNING, "连接失败");
     g_bmsData.online=false;
+
+    // 连接失败时立即释放本次 Client，避免下一轮扫描/连接继续占用堆。
+    NimBLEDevice::deleteClient(client_);
+    client_=nullptr;
+    ch_=nullptr;
+    writeCh_=nullptr;
+    notifyCh_=nullptr;
     return false;
   }
 
@@ -144,6 +158,11 @@ bool JkBle::connectByAddress(const String& address){
   NimBLERemoteService* s=client_->getService(NimBLEUUID(SERVICE));
   if(!s){
     client_->disconnect();
+    NimBLEDevice::deleteClient(client_);
+    client_=nullptr;
+    ch_=nullptr;
+    writeCh_=nullptr;
+    notifyCh_=nullptr;
     setStatus(BOOT_SCANNING, "找不到FFE0服务");
     return false;
   }
@@ -174,12 +193,22 @@ bool JkBle::connectByAddress(const String& address){
 
   if(!writeCh_){
     client_->disconnect();
+    NimBLEDevice::deleteClient(client_);
+    client_=nullptr;
+    ch_=nullptr;
+    writeCh_=nullptr;
+    notifyCh_=nullptr;
     setStatus(BOOT_SCANNING, "FFE1不可写");
     return false;
   }
 
   if(!notifyCh_){
     client_->disconnect();
+    NimBLEDevice::deleteClient(client_);
+    client_=nullptr;
+    ch_=nullptr;
+    writeCh_=nullptr;
+    notifyCh_=nullptr;
     setStatus(BOOT_SCANNING, "FFE1/FFE2无通知能力");
     return false;
   }
@@ -195,6 +224,11 @@ bool JkBle::connectByAddress(const String& address){
 
   if(!subscribed){
     client_->disconnect();
+    NimBLEDevice::deleteClient(client_);
+    client_=nullptr;
+    ch_=nullptr;
+    writeCh_=nullptr;
+    notifyCh_=nullptr;
     setStatus(BOOT_SCANNING, "FFE1/FFE2通知订阅失败");
     return false;
   }
